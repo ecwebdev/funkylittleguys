@@ -73,6 +73,7 @@
   #controls #fight{margin-left:auto}
   #controls button{white-space:nowrap}
   @media (max-width:400px){ #controls{gap:4px} #controls button{font-size:12px;padding:7px 7px} #goldBox{padding:5px 7px;font-size:16px} #capBox{font-size:10px!important;padding:4px 6px} }
+  body{background:transparent!important}
   #bg{position:fixed;inset:0;width:100%;height:100%;z-index:-1;display:block}
   .card-glass{background:rgba(48,40,100,.86);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(90,50,140,.35);border:2px solid rgba(255,255,255,.25);box-sizing:border-box}
   .ovbox h2{margin:4px 0}
@@ -93,14 +94,15 @@
   .mbox{background:var(--panel);border-radius:18px;padding:20px;max-width:340px;width:100%;text-align:center;box-shadow:0 10px 40px #000a;border:2px solid #ffffff18}
   .mbox h2{margin:0 0 6px} .mbox p{color:var(--mut);margin:0 0 16px;font-size:14px}
   .mbox .row{display:flex;gap:10px;justify-content:center}
-  .menu{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:440px;width:100%}
+  .menu{display:flex;flex-direction:column;align-items:center;gap:8px;max-width:440px;width:100%;padding-bottom:clamp(90px,15vh,150px)}
   .menu canvas{width:100%;border-radius:18px;box-shadow:0 8px 30px #0009}
   .logo{font-size:46px;font-weight:900;line-height:.95;text-align:center;letter-spacing:2px;margin-top:-4px;
     text-shadow:0 4px 0 #0007,0 0 24px #ffc93c55}
   .logo span{color:var(--gold);font-size:38px}
   .logo{text-shadow:0 4px 0 #6a3fa0,2px 0 0 #6a3fa0,-2px 0 0 #6a3fa0,0 -2px 0 #6a3fa0,0 8px 18px rgba(90,50,140,.45)!important}
   .tag{color:#fff;font-size:14px;margin-bottom:6px;background:rgba(90,60,150,.55);padding:4px 14px;border-radius:999px}
-  .menu button{width:240px}
+  .menu button{width:240px;padding-top:8px;padding-bottom:8px}
+  .menu .big{padding-top:11px!important;padding-bottom:11px!important}
   .stats{font-size:12px;color:#fff;margin-top:4px;background:rgba(90,60,150,.55);padding:3px 12px;border-radius:999px}
   .back{position:absolute;left:14px;top:14px}
   .roster{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;max-height:70vh;overflow:auto;padding-right:4px}
@@ -937,7 +939,7 @@ function newGame() {
     pgrid: emptyGrid(), bench: [], egrid: emptyGrid(),
     ai: { gold: 0, units: [], hero: null },
     shop: [], sel: null, drag: null, speed: 1,
-    ents: [], projs: [], fx: [], floats: [], parts: [], corpses: [], bt: 0, result: null,
+    ents: [], projs: [], fx: [], floats: [], parts: [], corpses: [], bt: 0, result: null, lastEnemy: [],
   };
   $('banner').classList.add('hidden'); closeModal();
   const dk = activeDeck();
@@ -1179,7 +1181,7 @@ function makeEnt(u, side, x, y, idx, row) {
   e.id = entIdc++;
   Object.assign(e, {
     walkT: Math.random() * 6, moving: false, face: x < W / 2 ? 1 : -1, faceS: x < W / 2 ? 1 : -1,
-    atkAnim: 0, atkDur: 0.3, hitT: 0, castT: 0, kx: 0, ky: 0, spawnT: 0.45 + idx * 0.05,
+    atkAnim: 0, atkDur: 0.3, hitT: 0, castT: 0, kx: 0, ky: 0, spawnT: 0.45 + (S.bt < 0 ? -S.bt : 0) + idx * 0.05,
     hpLag: e.hp, pending: null, ranged: isRanged(e.d),
     drawKey: u.key, promo: u.hero ? heroPromo(S.round) : 0, maxE: e.d.energy || 0, energy: 0, superQ: -1,
     aspd: 1 + (u.boast || 0) * 0.15, hots: [], unstopT: 0, reflectT: 0, weakT: 0, antiHealT: 0, empT: 0, stealT: 0, eCdT: 0, stackT: 5, stacks: 0, ambushed: false, clashed: false, empX: 2, stealX: 1, ragT: 0, invulnT: 0, lastStand: false, revived: false, atkCount: 0, wStacks: 0, wShieldBy: null, summon: !!u.summon,
@@ -1205,8 +1207,11 @@ function makeEntBase(u, side, x, y) {
 function startBattle() {
   if (S.phase !== 'plan') return;
   if (!S.online && boardCount() === 0 && !confirm('You have no minis on the board. Fight anyway?')) return;
+  $('toast').classList.remove('show');
   S.phase = 'battle'; S.sel = null; S.drag = null; S.speed = 1;
-  S.ents = []; S.projs = []; S.fx = []; S.floats = []; S.corpses = []; S.bt = 0; S.ended = false;
+  S.ents = []; S.projs = []; S.fx = []; S.floats = []; S.corpses = []; S.bt = -1.6; S.ended = false; S.introShook = false;
+  S.lastEnemy = [];
+  S.egrid.forEach((row, r) => row.forEach((u, c) => { if (u) S.lastEnemy.push({ r, c, key: r <= 1 && u.key === 'fern' ? 'deer' : u.key, hero: !!u.hero }); }));
   let idx = 0;
   S.pgrid.forEach((row, r) => row.forEach((u, c) => u && S.ents.push(makeEnt(u, 1, COLX(c), PY[r], idx++, r))));
   S.egrid.forEach((row, r) => row.forEach((u, c) => u && S.ents.push(makeEnt(u, -1, COLX(c), EY[r], idx++, r))));
@@ -1403,7 +1408,8 @@ function superCast(e) {
     case 'valka': {
       e.reflectT = 6; addHot(e, e.maxHp * 0.3, 6, e);
       if (e.promo >= 2) enemiesOf(e).forEach(o => taunt(o, e, 3));
-      ring(e.x, e.y, 140, '#ffd36b', 0.5); ring(e.x, e.y, 90, '#cfe0ff', 0.35); shake(5);
+      ring(e.x, e.y + e.r * 0.6, 120, '#ffd36b', 0.5); shake(5);
+      for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; S.parts.push({ x: e.x + Math.cos(a) * e.r * 1.4, y: e.y + e.r * 0.8 + Math.sin(a) * e.r * 0.45, vx: Math.cos(a) * 30, vy: -90 - Math.random() * 80, t: 0.7, col: i % 2 ? '#ffe08a' : '#fffbe0', s: 3 }); }
       floatTxt(e.x, e.y - 16, e.promo >= 2 ? 'Shield Up! Taunt!' : 'Shield Up!', '#ffe08a', true); break;
     }
   }
@@ -1584,7 +1590,7 @@ function step(dt) {
     e.faceS += (e.face - e.faceS) * Math.min(1, dt * 14);
     e.moving = false;
     if (e.pending) { e.pending.d -= dt; if (e.pending.d <= 0) { const pd = e.pending; e.pending = null; release(e, pd.t, pd.dmg, pd.heal); } }
-    if (S.bt < 0.8) continue; // units drop onto the field first
+    if (S.bt < 1.2) continue; // units drop onto the field first
     if (e.key === 'nyx' && !e.ambushed) ambush(e);
     if (e.key === 'valka' && e.promo >= 3 && !e.clashed) clash(e);
     if (e.key === 'kenji' && e.promo >= 1 && !e.clashed) { e.clashed = true; gainEnergy(e, e.maxE); floatTxt(e.x, e.y - 22, 'Focus!', '#cfe8ff', true); }
@@ -1693,7 +1699,7 @@ function showResultBanner(res, dmgTxt, mvp) {
   const title = { win: 'VICTORY!', lose: 'DEFEAT', draw: 'DRAW' }[res];
   const col = { win: '#ffd23f', lose: '#ff6b7a', draw: '#cfd3ff' }[res];
   b.innerHTML = `<h2 style="color:${col}">${title}</h2><p>${dmgTxt}</p>` +
-    (mvp ? `<p>MVP: <b style="color:#fff">${mvp[0]}</b> · ${mvp[1]} damage</p>` : '');
+    '';
   const btn = document.createElement('button'); btn.className = 'go big';
   if (over) {
     const won = S.ehp <= 0 && S.php > 0;
@@ -1734,7 +1740,7 @@ function updateHud() {
   $('sell').disabled = !plan || !su || su.hero;
   $('sell').textContent = su && !su.hero ? `Sell +${Math.max(1, su.spent - 1)}` : 'Sell';
   const fighting = S.phase === 'battle' || S.phase === 'result';
-  if (document.body.classList.contains('fighting') !== fighting) { document.body.classList.toggle('fighting', fighting); requestAnimationFrame(fitBoard); }
+  if (document.body.classList.contains('fighting') !== fighting) { document.body.classList.toggle('fighting', fighting); startZoom(); }
   const fab = $('speedFab');
   fab.classList.toggle('hidden', S.phase !== 'battle' || !!S.online);
   fab.textContent = S.speed === 1 ? '⏩ Speed up' : '▶ Normal';
@@ -2005,8 +2011,21 @@ function drawRivalFog() {
     const x = ((i * 90 + t * (10 + i * 3)) % (W + 160)) - 80, y = 100 + (i % 4) * 68 + Math.sin(t + i) * 6;
     ell(ctx, x, y, 70, 22, 'rgba(235,230,255,.10)');
   }
+  const ghosts = S.lastEnemy || [];
+  const ghostAt = new Set(ghosts.map(g => g.r + ',' + g.c));
+  for (const gh of ghosts) {
+    const x = COLX(gh.c), y = EY[gh.r];
+    ctx.save();
+    ctx.setLineDash([6, 5]); ctx.lineDashOffset = -t * 12; ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x - 40, y - 28, 80, 54, 10); ctx.stroke(); ctx.setLineDash([]);
+    const sp = getSprite(gh.key), s2 = gh.hero ? 26 : 23, k = s2 / (SB * RES), foot = FOOT * SB * RES;
+    ctx.globalAlpha = 0.32 + Math.sin(t * 2 + gh.c) * 0.06;
+    ctx.translate(x, y - 8 + s2 * FOOT); ctx.scale(k, k); ctx.drawImage(sp.white, -sp.size / 2, -sp.size / 2 - foot);
+    ctx.restore();
+  }
   ctx.font = 'bold 28px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let c = 0; c < 4; c++) for (let r = 0; r < ROWS; r++) {
+    if (ghostAt.has(r + ',' + c)) continue;
     const bob = Math.sin(t * 2 + c + r * 2) * 3;
     ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillText('?', COLX(c), EY[r] + bob);
   }
@@ -2021,6 +2040,80 @@ function crown(x, y) {
   ctx.fillStyle = '#ffd23f'; ctx.beginPath();
   ctx.moveTo(x - 9, y + 5); ctx.lineTo(x - 10, y - 4); ctx.lineTo(x - 5, y); ctx.lineTo(x, y - 7); ctx.lineTo(x + 5, y); ctx.lineTo(x + 10, y - 4); ctx.lineTo(x + 9, y + 5);
   ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#7a4b00'; ctx.lineWidth = 1; ctx.stroke();
+}
+
+// ---------- Valka's Super: a 3D golden shield dome ----------
+function shieldK(e) { // 0..1 rise-in, then fade at the end
+  const up = Math.min(1, (6 - e.reflectT) / 0.35), down = Math.min(1, e.reflectT / 0.4);
+  return Math.max(0, Math.min(up, down));
+}
+function drawShieldGround(e, now) {
+  const k = shieldK(e), x = e.x + e.kx, y = e.y + e.ky + e.r * 0.9, R = e.r * 1.75 * (0.6 + 0.4 * k);
+  ctx.save(); ctx.globalAlpha = 0.85 * k;
+  const g = ctx.createRadialGradient(x, y, 2, x, y, R); g.addColorStop(0, 'rgba(255,230,140,.55)'); g.addColorStop(0.7, 'rgba(255,200,80,.22)'); g.addColorStop(1, 'rgba(255,200,80,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  // rotating rune ring on the ground
+  ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(x, y, R * 0.92, R * 0.33, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x, y, R * 0.7, R * 0.25, 0, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 12; i++) {
+    const a = now * 1.2 + i * Math.PI / 6, cx = x + Math.cos(a) * R * 0.81, cy = y + Math.sin(a) * R * 0.29;
+    ctx.fillStyle = i % 3 === 0 ? '#fff6c8' : '#ffd36b';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 3); ctx.lineTo(cx + 2.5, cy); ctx.lineTo(cx, cy + 3); ctx.lineTo(cx - 2.5, cy); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawShieldDome(e, x, y, now, half) {
+  const k = shieldK(e); if (k <= 0) return;
+  const R = e.r * 1.55, cy = y + e.r * 0.2, h = R * (0.35 + 0.65 * k); // dome rises out of the ground
+  ctx.save();
+  if (half === 'back') {
+    // back of the dome: soft glow + hex pattern, behind Valka
+    ctx.globalAlpha = 0.55 * k;
+    const g = ctx.createRadialGradient(x - R * 0.35, cy - h * 0.55, R * 0.1, x, cy, R * 1.05);
+    g.addColorStop(0, 'rgba(255,250,215,.55)'); g.addColorStop(0.55, 'rgba(255,214,110,.28)'); g.addColorStop(1, 'rgba(255,170,40,.55)');
+    ctx.beginPath(); ctx.ellipse(x, cy, R, h, 0, Math.PI, 0); ctx.ellipse(x, cy, R, R * 0.32, 0, 0, Math.PI); ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255,240,180,.55)'; ctx.lineWidth = 1.2;
+    const hs = 7, sh = Math.sin(now * 2) * 2;
+    for (let row = -6; row <= 6; row++) for (let col = -6; col <= 6; col++) {
+      const hx = x + col * hs * 1.5, hy = cy - h + row * hs * 1.73 + (col % 2 ? hs * 0.86 : 0) + sh;
+      ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; ctx.lineTo(hx + Math.cos(a) * hs * 0.9, hy + Math.sin(a) * hs * 0.9); } ctx.closePath(); ctx.stroke();
+    }
+    // back halves of the orbit rings
+    ctx.restore(); ctx.save(); ctx.globalAlpha = 0.45 * k;
+    orbitRings(x, cy - h * 0.45, R, now, true);
+  } else {
+    // front: glassy rim, highlight, front halves of the orbit rings, sparkles
+    ctx.globalAlpha = 0.9 * k;
+    ctx.strokeStyle = 'rgba(255,225,120,.95)'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(x, cy, R, h, 0, Math.PI, 0); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.ellipse(x, cy, R * 0.82, h * 0.82, 0, Math.PI * 1.18, Math.PI * 1.42); ctx.stroke();
+    ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(x - R * 0.4, cy - h * 0.62, R * 0.18, h * 0.1, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.95 * k;
+    orbitRings(x, cy - h * 0.45, R, now, false);
+    for (let i = 0; i < 3; i++) { const a = now * 2.5 + i * 2.1, sx = x + Math.cos(a) * R * 0.9, sy = cy - h * 0.5 + Math.sin(a * 1.3) * h * 0.4; star(ctx, sx, sy, 2.5 + Math.sin(now * 8 + i) * 1, '#fffbe0'); }
+    // rising flash when the shield goes up
+    const rise = (6 - e.reflectT) / 0.45;
+    if (rise < 1) { ctx.globalAlpha = 1 - rise; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4 * (1 - rise) + 1; ctx.beginPath(); ctx.ellipse(x, cy - h * rise, R * (1 - rise * 0.4), R * 0.3 * (1 - rise * 0.4), 0, 0, Math.PI * 2); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+function orbitRings(x, y, R, now, back) {
+  // two tilted rings spinning around the dome; draw the back or front half
+  for (const [tilt, spd, col, rr] of [[0.5, 1.6, '#ffd36b', 1.08], [-0.65, -1.1, '#fff1b8', 0.95]]) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(tilt);
+    ctx.strokeStyle = col; ctx.lineWidth = back ? 2 : 3;
+    const a0 = back ? Math.PI : 0, a1 = back ? Math.PI * 2 : Math.PI;
+    ctx.beginPath(); ctx.ellipse(0, 0, R * rr, R * rr * 0.26, 0, a0, a1); ctx.stroke();
+    // a little glowing gem riding the ring
+    const ga = (now * spd) % (Math.PI * 2), gb = ga < 0 ? ga + Math.PI * 2 : ga;
+    if ((gb > Math.PI) === back) { const gx = Math.cos(gb) * R * rr, gy = Math.sin(gb) * R * rr * 0.26; circle(ctx, gx, gy, back ? 2.5 : 4, back ? 'rgba(255,240,180,.7)' : '#ffffff'); circle(ctx, gx, gy, back ? 5 : 8, 'rgba(255,220,120,.25)'); }
+    ctx.restore();
+  }
 }
 
 const easeOutBack = p => 1 + 2.70158 * Math.pow(p - 1, 3) + 1.70158 * Math.pow(p - 1, 2);
@@ -2067,8 +2160,7 @@ function drawBattle(dt) {
   for (const e of list) {
     const ps = poses.get(e), team = e.side === 1 ? '#3fa0ff' : '#ff4d5e';
     if (e.empT > 0 || e.stealT > 0) { ctx.save(); ctx.globalAlpha = 0.35 + Math.sin(now * 12) * 0.15; circle(ctx, e.x + e.kx, e.y + e.ky, e.r * 1.25, e.empT > 0 ? 'rgba(255,170,40,.5)' : 'rgba(255,60,110,.45)'); ctx.restore(); }
-    if (e.reflectT > 0) { ctx.save(); ctx.globalAlpha = 0.6; ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 3; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -now * 30;
-      ctx.beginPath(); ctx.arc(e.x + e.kx, e.y + e.ky, e.r * 1.3, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+    if (e.reflectT > 0) drawShieldGround(e, now);
     if (e.invulnT > 0) { ctx.save(); ctx.globalAlpha = 0.45 + Math.sin(now * 16) * 0.2; circle(ctx, e.x + e.kx, e.y + e.ky, e.r * 1.35, 'rgba(255,225,90,.35)', '#ffe14d', 3); ctx.restore(); }
     if (e.ragT > 0 && Math.random() < 0.3) S.parts.push(part(e.x + (Math.random() - 0.5) * 20, e.y + e.r * 0.6, '#ff5a3a', 40));
     if (e.unstopT > 0) { ctx.save(); ctx.globalAlpha = 0.5; circle(ctx, e.x + e.kx, e.y + e.ky, e.r * 1.15, null, '#ffb000', 3); ctx.restore(); }
@@ -2085,7 +2177,9 @@ function drawBattle(dt) {
       if (e.atkAnim > 0) { const p = 1 - e.atkAnim / e.atkDur; frame = p < 0.4 ? 'a1' : p < 0.8 ? 'a2' : 'i'; }
       else if (e.moving) frame = 'w' + (Math.floor(e.walkT / (Math.PI * 2) * 8) % 8);
     }
+    if (e.reflectT > 0) drawShieldDome(e, x, y, now, 'back');
     drawSprite(ctx, e.drawKey || e.key, x, y, e.r, { frame, flip: e.faceS, sx: ps.sx, sy: ps.sy, rot: ps.rot * 0.5, alpha: ps.alpha, flash: e.flash > 0 ? e.flash / 0.12 : 0 });
+    if (e.reflectT > 0) drawShieldDome(e, x, y, now, 'front');
     if (ps.alpha < 1) continue;
     if (e.slowT > 0) {
       circle(ctx, x, y, e.r + 1, 'rgba(150,220,255,.22)');
@@ -2134,13 +2228,44 @@ function drawBattle(dt) {
     if (e.stunT > 0 && !(e.rootT > 0)) { const tt = now * 5; for (let i = 0; i < 3; i++) star(ctx, x + Math.cos(tt + i * 2.1) * 15, (e.u.hero ? by - 10 : y - e.r - 24) + Math.sin(tt + i * 2.1) * 4, 5, '#ffe56b'); }
   }
   drawProjectiles(now);
+  drawFightIntro();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(S.bt < 0.8 ? 'READY... FIGHT!' : `BATTLE · ${Math.max(0, Math.ceil(45 - S.bt))}s`, W / 2, 26);
+  ctx.fillText(S.bt < 0 ? 'GET READY…' : S.bt < 1.2 ? 'READY... FIGHT!' : `BATTLE · ${Math.max(0, Math.ceil(45 - S.bt))}s`, W / 2, 26);
   const pa = S.ents.filter(e => e.alive && e.side === 1).length, ea = S.ents.filter(e => e.alive && e.side === -1).length;
   ctx.font = '12px "Trebuchet MS", sans-serif'; ctx.fillStyle = '#ffffffb0';
   ctx.fillText(`You ${pa} alive · Rival ${ea} alive`, W / 2, 46);
 }
 
+function drawFightIntro() {
+  const bt = S.bt;
+  if (bt >= 1.3) return;
+  ctx.save();
+  if (bt < 0) {
+    // darkened edges + pulsing GET READY
+    const k = Math.min(1, (bt + 1.6) / 0.35);
+    const vg = ctx.createRadialGradient(W / 2, H / 2, 120, W / 2, H / 2, 420);
+    vg.addColorStop(0, 'rgba(20,10,50,0)'); vg.addColorStop(1, `rgba(20,10,50,${0.6 * k})`);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = `rgba(20,10,50,${0.22 * k})`; ctx.fillRect(0, 0, W, H);
+    const pulse = 1 + Math.sin(bt * 12) * 0.04, sc = (0.6 + 0.4 * k) * pulse;
+    ctx.translate(W / 2, H / 2 - 10); ctx.scale(sc, sc); ctx.globalAlpha = k;
+    ctx.font = 'bold 46px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 9; ctx.strokeStyle = '#4a2a8a'; ctx.strokeText('GET READY', 0, 0);
+    ctx.fillStyle = '#fff'; ctx.fillText('GET READY', 0, 0);
+    ctx.font = 'bold 16px "Trebuchet MS", sans-serif'; ctx.lineWidth = 5; ctx.strokeText('the rival is revealed…', 0, 40); ctx.fillStyle = '#ffd0d6'; ctx.fillText('the rival is revealed…', 0, 40);
+  } else {
+    // FIGHT! slams in then fades
+    const p = bt / 1.3, sc = p < 0.14 ? 2.4 - (p / 0.14) * 1.4 : 1 + (p - 0.14) * 0.2, a = p < 0.72 ? 1 : 1 - (p - 0.72) / 0.28;
+    ctx.fillStyle = `rgba(20,10,50,${0.25 * (1 - p)})`; ctx.fillRect(0, 0, W, H);
+    ctx.translate(W / 2, H / 2 - 10); ctx.scale(sc, sc); ctx.rotate(-0.06); ctx.globalAlpha = Math.max(0, a);
+    ctx.font = 'bold 62px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 11; ctx.strokeStyle = '#8a2a10'; ctx.strokeText('FIGHT!', 0, 0);
+    const gr = ctx.createLinearGradient(0, -30, 0, 30); gr.addColorStop(0, '#fff3a8'); gr.addColorStop(1, '#ff8a3a');
+    ctx.fillStyle = gr; ctx.fillText('FIGHT!', 0, 0);
+    if (p < 0.2 && !S.introShook) { S.introShook = true; shake(8); }
+  }
+  ctx.restore();
+}
 function drawProjectiles(now) {
   for (const p of S.projs) {
     const n = p.trail.length;
@@ -2279,21 +2404,47 @@ function drawFx(dt) {
 const DPR = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
 // During fights we crop the side scenery so the board itself can be bigger.
 const VIEW = { x: 0, w: W };
-function fitBoard() {
-  const st = document.getElementById('stage'), bw = document.getElementById('boardWrap');
+let zoomAnim = null;
+function boardTarget() {
+  const st = document.getElementById('stage');
   const fighting = document.body.classList.contains('fighting');
-  VIEW.x = fighting ? 50 : 0; VIEW.w = W - VIEW.x * 2;
-  if (cv.width !== VIEW.w * DPR) cv.width = VIEW.w * DPR;
-  const aw = st.clientWidth, ah = st.clientHeight;
-  if (!aw || !ah) return;
-  const k = Math.min(aw / VIEW.w, ah / H);
-  bw.style.width = Math.floor(VIEW.w * k) + 'px'; bw.style.height = Math.floor(H * k) + 'px';
+  const x = fighting ? 50 : 0, w = W - x * 2;
+  const k = Math.min(st.clientWidth / w, st.clientHeight / H);
+  return { x, w, bw: Math.floor(w * k), bh: Math.floor(H * k) };
+}
+function applyBoard(b) {
+  const bwEl = document.getElementById('boardWrap');
+  VIEW.x = b.x; VIEW.w = b.w;
+  const cw = Math.round(VIEW.w * DPR);
+  if (cv.width !== cw) cv.width = cw;
+  bwEl.style.width = b.bw + 'px'; bwEl.style.height = b.bh + 'px';
+}
+function fitBoard() {
+  if (zoomAnim) return;
+  const st = document.getElementById('stage');
+  if (!st.clientWidth || !st.clientHeight) return;
+  applyBoard(boardTarget());
+}
+function startZoom() {
+  const bwEl = document.getElementById('boardWrap');
+  const from = { x: VIEW.x, w: VIEW.w, bw: bwEl.offsetWidth, bh: bwEl.offsetHeight };
+  const to = boardTarget();
+  if (!from.bw) { applyBoard(to); return; }
+  zoomAnim = { t0: performance.now(), dur: document.body.classList.contains('fighting') ? 1300 : 650, from, to };
+}
+function tickZoom(now) {
+  if (!zoomAnim) return;
+  const z = zoomAnim, p = Math.min(1, (now - z.t0) / z.dur), e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+  const L = (a, b) => a + (b - a) * e;
+  applyBoard({ x: L(z.from.x, z.to.x), w: L(z.from.w, z.to.w), bw: Math.round(L(z.from.bw, z.to.bw)), bh: Math.round(L(z.from.bh, z.to.bh)) });
+  if (p >= 1) { zoomAnim = null; fitBoard(); }
 }
 new ResizeObserver(fitBoard).observe(document.getElementById('stage'));
 addEventListener('resize', fitBoard);
 cv.width = W * DPR; cv.height = H * DPR;
 let last = performance.now(), acc = 0;
 function frame(now) {
+  tickZoom(now);
   const rdt = Math.min(0.05, (now - last) / 1000); last = now;
   if (S) {
     const sdt = S.paused ? 0 : rdt * (S.phase === 'battle' ? S.speed : 1);
@@ -2421,7 +2572,7 @@ function renderDecks() {
   const play = document.createElement('button'); play.className = 'go'; play.textContent = '▶ Play with it';
   play.disabled = !valid;
   play.onclick = () => { DECKS.active = deckEdit; saveDecks(); newGame(); };
-  act.appendChild(use); act.appendChild(play);
+  act.appendChild(use);
   p.appendChild(act);
   if (!valid) p.insertAdjacentHTML('beforeend', `<div class="dkwarn">Pick ${DECK_SIZE - dk.minis.length} more mini${DECK_SIZE - dk.minis.length === 1 ? '' : 's'} to finish this deck.</div>`);
 }
@@ -2745,7 +2896,7 @@ function maybeStartOnlineBattle() {
   S.egrid = emptyGrid();
   o.oppBoard.forEach(b => { S.egrid[b.r][b.c] = { key: b.key, lvl: b.lvl, hero: b.hero, uid: b.uid, boast: b.boast, spent: 0 }; });
   o.oppBoard = null; o.oppReady = false;
-  netSend({ t: 'battle', round: S.round });
+  netSend({ t: 'battle', round: S.round, board: serializeBoard() });
   startBattle();
 }
 
@@ -2846,7 +2997,7 @@ function onNet(m) {
       S.online.oppReady = true; S.online.oppBoard = m.board;
       if (!S.online.myReady) toast('Your friend is ready!');
       maybeStartOnlineBattle(); updateHud(); break;
-    case 'battle': if (S && S.online) guestStartBattle(m.round); break;
+    case 'battle': if (S && S.online) { S.lastEnemy = (m.board || []).map(b => ({ r: b.r, c: b.c, key: b.r <= 1 && b.key === 'fern' ? 'deer' : b.key, hero: !!b.hero })); guestStartBattle(m.round); } break;
     case 'snap': if (S && S.online) guestSnap(m); break;
     case 'result': guestResult(m); break;
     case 'bye': lostConnection(); break;
@@ -2866,7 +3017,7 @@ function showMenu() {
   $('banner').classList.add('hidden');
   const ov = $('overlay'); ov.innerHTML = '';
   const m = document.createElement('div'); m.className = 'menu';
-  const mc = document.createElement('canvas'); mc.width = 880; mc.height = 480;
+  const mc = document.createElement('canvas'); mc.width = 880; mc.height = 400;
   m.appendChild(mc);
   m.insertAdjacentHTML('beforeend', `<div class="logo">FUNKY<br><span>LITTLE GUYS</span></div>
     <div class="tag">Build a squad. Watch it brawl.</div>`);
@@ -2894,31 +3045,31 @@ function stopMenuAnim() { if (menuAnim) cancelAnimationFrame(menuAnim); menuAnim
 function startMenuAnim(mc) {
   stopMenuAnim();
   const g = mc.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0);
-  const MW = 440, MH = 240;
+  const MW = 440, MH = 200;
   const parade = ['shell', 'fox', 'golem', 'owl', 'sprite', 'beetle', 'cat', 'shroom', 'boar'];
   const t0 = performance.now();
   const loop = now => {
     if (!mc.isConnected) { menuAnim = null; return; }
     const t = (now - t0) / 1000;
-    const sky = g.createLinearGradient(0, 0, 0, MH); sky.addColorStop(0, '#6fc3ff'); sky.addColorStop(0.55, '#bfe8ff'); sky.addColorStop(0.56, '#6cb45c'); sky.addColorStop(1, '#4f8a4a');
+    const sky = g.createLinearGradient(0, 0, 0, MH); sky.addColorStop(0, '#6fc3ff'); sky.addColorStop(0.5, '#bfe8ff'); sky.addColorStop(0.51, '#6cb45c'); sky.addColorStop(1, '#4f8a4a');
     g.fillStyle = sky; g.fillRect(0, 0, MW, MH);
     // sun & clouds
     circle(g, 370, 40, 22, '#fff3b0'); circle(g, 370, 40, 32, 'rgba(255,243,176,.3)');
     for (let i = 0; i < 4; i++) { const cx = ((i * 140 + t * 12) % 560) - 60, cy = 30 + (i % 2) * 22; ell(g, cx, cy, 30, 10, '#ffffffcc'); ell(g, cx + 14, cy - 6, 18, 10, '#ffffffcc'); }
     // hills
-    g.fillStyle = '#5ea653'; g.beginPath(); g.moveTo(0, 140); for (let x = 0; x <= MW; x += 20) g.lineTo(x, 128 + Math.sin(x * 0.02) * 10); g.lineTo(MW, MH); g.lineTo(0, MH); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) g.fillRect(0, 150 + i * 16, MW, 8);
+    g.fillStyle = '#5ea653'; g.beginPath(); g.moveTo(0, 112); for (let x = 0; x <= MW; x += 20) g.lineTo(x, 100 + Math.sin(x * 0.02) * 9); g.lineTo(MW, MH); g.lineTo(0, MH); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.05)'; for (let i = 0; i < 6; i++) g.fillRect(0, 120 + i * 14, MW, 7);
     // parade of minis walking across
     const items = [];
     parade.forEach((k, i) => {
       const x = ((i * 62 + t * 45) % (parade.length * 62)) - 40, wt = t * 9 + i;
-      items.push({ k, x, y: 210 - Math.abs(Math.sin(wt)) * 5, s: 20, f: 'w' + (Math.floor(wt / (Math.PI * 2) * 8) % 8), flip: 1, gy: 210 });
+      items.push({ k, x, y: 172 - Math.abs(Math.sin(wt)) * 5, s: 19, f: 'w' + (Math.floor(wt / (Math.PI * 2) * 8) % 8), flip: 1, gy: 172 });
     });
     // heroes showing off in the middle
     Object.keys(HEROES).forEach((k, i, arr) => {
       const ph = (t * 0.9 + i * 0.37) % 1.8;
       const f = ph < 0.18 ? 'a1' : ph < 0.4 ? 'a2' : 'i';
-      const gy = 150 + (i % 2) * 14;
+      const gy = 118 + (i % 2) * 12;
       items.push({ k, x: 50 + i * (340 / (arr.length - 1)), y: gy - (ph < 0.18 ? 4 : 0), s: 22, f, flip: i >= arr.length / 2 ? -1 : 1, gy });
     });
     items.sort((a, b) => a.gy - b.gy);
@@ -3049,7 +3200,7 @@ document.addEventListener('keydown', e => {
       const speed = 28 + (i % 3) * 8, span = BW + 120;
       const x = ((i * span / walkers.length + t * speed) % span) - 60;
       const gy = BH * 0.93 + Math.sin(x * 0.01 + 2) * 12 - 4;
-      const wt = t * 9 + i, s = 14;
+      const wt = t * 9 + i, s = 18;
       g.fillStyle = 'rgba(0,0,0,.12)'; g.beginPath(); g.ellipse(x, gy + s * 0.9, s * 0.8, s * 0.25, 0, 0, Math.PI * 2); g.fill();
       drawSprite(g, k, x, gy - Math.abs(Math.sin(wt)) * 3, s, { frame: 'w' + (Math.floor(wt / (Math.PI * 2) * 8) % 8) });
     });
