@@ -11,7 +11,7 @@ To play from a link, use GitHub Pages:
 2. Set the source to **Deploy from a branch**.
 3. Pick `main` and `/ (root)`, then save.
 
-After about a minute the game is live at `https://<your-username>.github.io/<repo-name>/`.
+After about a minute the game is live at `https://ecwebdev.github.io/funkylittleguys/`.
 
 ## How it works
 
