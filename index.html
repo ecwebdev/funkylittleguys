@@ -1076,16 +1076,53 @@ function groundMark(c, x, y, s, team, alpha) {
   c.restore();
 }
 
+// ---------- level marks: gems (bronze → silver → gold) + golden glow at max ----------
+const GEM_COLS = [['#d08a4a', '#7a4818'], ['#dfe4ec', '#7f8896'], ['#ffd23f', '#a87800']];  // bronze, silver, gold
+function gem(c, x, y, r, lvl) {
+  const [col, dark] = GEM_COLS[lvl - 1];
+  c.beginPath(); c.moveTo(x - r, y - r * 0.15); c.lineTo(x - r * 0.5, y - r * 0.85); c.lineTo(x + r * 0.5, y - r * 0.85); c.lineTo(x + r, y - r * 0.15); c.lineTo(x, y + r); c.closePath();
+  c.fillStyle = col; c.fill(); c.strokeStyle = dark; c.lineWidth = Math.max(1, r * 0.22); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,.65)'; c.beginPath(); c.moveTo(x - r * 0.45, y - r * 0.7); c.lineTo(x - r * 0.05, y - r * 0.7); c.lineTo(x - r * 0.35, y - r * 0.1); c.closePath(); c.fill();
+}
+function drawLevelGems(c, x, y, r, lvl) {
+  const sp = r * 2.3;
+  for (let i = 0; i < lvl; i++) gem(c, x - (lvl - 1) * sp / 2 + i * sp, y, r, lvl);
+}
+function drawMaxGlow(c, x, y, s, alpha) {
+  const t = performance.now() / 1000, a = alpha === undefined ? 1 : alpha;
+  c.save(); c.globalAlpha = a * (0.75 + Math.sin(t * 3) * 0.15);
+  const g = c.createRadialGradient(x, y, s * 0.2, x, y, s * 1.7);
+  g.addColorStop(0, 'rgba(255,240,150,.95)'); g.addColorStop(0.45, 'rgba(255,210,60,.5)'); g.addColorStop(1, 'rgba(255,210,60,0)');
+  c.fillStyle = g; c.fillRect(x - s * 1.8, y - s * 1.8, s * 3.6, s * 3.6);
+  c.restore();
+}
+// 4-point glint (deliberately different from the 5-point stun stars)
+function twinkle(c, x, y, r, col) {
+  c.fillStyle = col;
+  c.beginPath(); c.moveTo(x, y - r); c.quadraticCurveTo(x, y, x + r * 0.32, y); c.quadraticCurveTo(x, y, x, y + r); c.quadraticCurveTo(x, y, x - r * 0.32, y); c.quadraticCurveTo(x, y, x, y - r); c.fill();
+  c.beginPath(); c.moveTo(x - r * 0.75, y); c.quadraticCurveTo(x, y, x, y - r * 0.25); c.quadraticCurveTo(x, y, x + r * 0.75, y); c.quadraticCurveTo(x, y, x, y + r * 0.25); c.quadraticCurveTo(x, y, x - r * 0.75, y); c.fill();
+  c.beginPath(); c.arc(x, y, r * 0.16, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill();
+}
+function drawMaxSparkles(c, x, y, s, alpha) {
+  const t = performance.now() / 1000, a = alpha === undefined ? 1 : alpha;
+  c.save();
+  for (let i = 0; i < 5; i++) {
+    const ph = (t * 0.7 + i * 0.37) % 1, ang = i * 1.26 + t * 0.6;
+    const sx = x + Math.cos(ang) * s * 0.95, sy = y - s * 0.2 + Math.sin(ang) * s * 0.55 - ph * s * 0.7;
+    c.globalAlpha = a * Math.sin(ph * Math.PI);
+    twinkle(c, sx, sy, s * (0.16 + 0.1 * Math.sin(ph * Math.PI)), i % 2 ? '#ffffff' : '#ffe68a');
+  }
+  c.restore();
+}
 function drawMini(c, key, x, y, s, team, lvl, o) {
   o = o || {};
   const t = performance.now() / 1000;
+  if (lvl === 3 && !o.still) drawMaxGlow(c, x, y, s);
   groundMark(c, x, y, s, team);
   const br = o.still ? 0 : Math.sin(t * 3 + x * 0.05);
   drawSprite(c, key, x, y, s, { sy: 1 + br * 0.04, sx: 1 - br * 0.03, rot: o.rot || 0, flash: o.flash ? 1 : 0 });
-  if (lvl) {
-    const n = lvl, sp = s * 0.42;
-    for (let i = 0; i < n; i++) star(c, x - (n - 1) * sp / 2 + i * sp, y + s * 1.15, s * 0.21, '#ffd23f');
-  }
+  if (lvl === 3 && !o.still) drawMaxSparkles(c, x, y, s);
+  if (lvl) drawLevelGems(c, x, y + s * 1.2, s * 0.23, lvl);
 }
 
 // ======================= STATE =======================
@@ -1201,7 +1238,7 @@ function buy(i) {
   const owned = allPlayerUnits().filter(u => u.key === k && u.lvl < 3).sort((a, b) => b.lvl - a.lvl)[0];
   if (owned) {
     owned.lvl++; owned.spent += d.cost;
-    toast(`${d.name} leveled up to ★${owned.lvl}!`);
+    toast(owned.lvl === 3 ? `${d.name} is fully upgraded! 🏆 MAX` : `${d.name} leveled up to Lv ${owned.lvl}!`);
     burstAtUnit(owned);
   } else {
     if (boardCount() >= capFor(S.round)) return toast(`Board is full (${capFor(S.round)} minis). Sell one first`);
@@ -1550,16 +1587,34 @@ function superCast(e) {
     case 'coral': {
       if (e.promo >= 3) {
         heal(e, e.maxHp * 0.3); e.empT = 6; e.empX = 4;
-        ring(e.x, e.y, 90, '#ff5a3a', 0.5); floatTxt(e.x, e.y - 16, 'Captain\'s Fury x4!', '#ffb36b', true);
+        S.fx.push({ kind: 'helm', a: e, t: 1.1, dur: 1.1, big: 1 });
+        S.fx.push({ kind: 'coins', x: e.x, y: e.y - 20, t: 1.2, dur: 1.2, seed: Math.random() * 1000, n: 22 });
+        S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 110, col: '#ff5a3a', t: 0.6, dur: 0.6 });
+        S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 70, col: '#ffd36b', t: 0.45, dur: 0.45 });
+        for (let i = 0; i < 26; i++) S.parts.push({ x: e.x + (Math.random() - 0.5) * 40, y: e.y + 10, vx: (Math.random() - 0.5) * 40, vy: -120 - Math.random() * 120, t: 0.7, col: i % 2 ? '#ff7a2a' : '#ffd23f', s: 4 });
+        floatTxt(e.x, e.y - 16, 'Captain\'s Fury x4!', '#ffb36b', true);
       } else {
-        alliesOf(e).forEach(a => { a.empT = 6; a.empX = Math.max(a.empT > 0 && a.empX ? a.empX : 2, 2); ring(a.x, a.y, 40, '#ffb36b', 0.35); });
-        ring(e.x, e.y, 150, '#ff7a8a', 0.55); floatTxt(e.x, e.y - 16, 'All hands! x2!', '#ffb36b', true);
+        alliesOf(e).forEach(a => {
+          a.empT = 6; a.empX = Math.max(a.empT > 0 && a.empX ? a.empX : 2, 2);
+          if (a !== e) S.fx.push({ kind: 'orbfly', a: e, b: a, t: 0.55, dur: 0.55, col: '#ffd23f' });
+          S.fx.push({ kind: 'ring3d', x: a.x, y: a.y + a.r * 0.85, maxR: 42, col: '#ffb36b', t: 0.5, dur: 0.5 });
+        });
+        S.fx.push({ kind: 'helm', a: e, t: 1.0, dur: 1.0 });
+        S.fx.push({ kind: 'coins', x: e.x, y: e.y - 20, t: 1.1, dur: 1.1, seed: Math.random() * 1000, n: 16 });
+        S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 130, col: '#ff7a8a', t: 0.6, dur: 0.6 });
+        floatTxt(e.x, e.y - 16, 'All hands! x2!', '#ffb36b', true);
       }
       shake(5); break;
     }
     case 'willow': {
       const al = alliesOf(e).filter(a => a !== e).sort((a, b) => dist(a, e) - dist(b, e)).slice(0, 3);
-      [e, ...al].forEach(a => { a.shield = Math.min(a.shield + a.maxHp * 0.25, a.maxHp * 0.8); a.wShieldBy = e; S.fx.push({ kind: 'beam', a: e, b: a, col: '#c9a6ff', t: 0.35, dur: 0.35 }); ring(a.x, a.y, 45, '#d9c2ff', 0.4); });
+      [e, ...al].forEach(a => {
+        a.shield = Math.min(a.shield + a.maxHp * 0.25, a.maxHp * 0.8); a.wShieldBy = e;
+        if (a !== e) S.fx.push({ kind: 'orbfly', a: e, b: a, t: 0.6, dur: 0.6, col: '#b48cff', leaf: 1 });
+      });
+      S.fx.push({ kind: 'runecircle', a: e, t: 1.1, dur: 1.1 });
+      S.fx.push({ kind: 'leafvortex', a: e, t: 1.0, dur: 1.0, n: 14 });
+      S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 90, col: '#c9a6ff', t: 0.55, dur: 0.55 });
       floatTxt(e.x, e.y - 16, 'Arcane Shield!', '#d9c2ff', true); break;
     }
     case 'ironjaw': {
@@ -1582,8 +1637,16 @@ function superCast(e) {
       const t = e.target && e.target.alive ? e.target : nearest(e, enemiesOf(e));
       if (!t) return;
       const d0 = dist(e, t) || 1, dx = (t.x - e.x) / d0, dy = (t.y - e.y) / d0;
-      for (let i = 0; i < 10; i++) S.parts.push(part(e.x + (t.x - e.x) * i / 10, e.y + (t.y - e.y) * i / 10, '#9fd0ff', 40));
+      const kx0 = e.x, ky0 = e.y;
       e.x = t.x - dx * (e.r + t.r) * 0.9; e.y = t.y - dy * (e.r + t.r) * 0.9; e.lx = dx; e.ly = dy;
+      for (let i = 0; i < 5; i++) { const q = i / 5; S.fx.push({ kind: 'afterimage', key: 'kenji', x: kx0 + (e.x - kx0) * q, y: ky0 + (e.y - ky0) * q, r: e.r, face: dx >= 0 ? 1 : -1, t: 0.25 + q * 0.25, dur: 0.25 + q * 0.25 }); }
+      e.atkDur = 0.35; e.atkAnim = 0.35;
+      S.fx.push({ kind: 'palm', x: t.x, y: t.y - 6, t: 0.5, dur: 0.5, dir: dx >= 0 ? 1 : -1 });
+      S.fx.push({ kind: 'speedlines', x: t.x, y: t.y - 6, t: 0.35, dur: 0.35 });
+      S.fx.push({ kind: 'ring3d', x: t.x, y: t.y + t.r * 0.85, maxR: 90, col: '#9fd0ff', t: 0.45, dur: 0.45 });
+      S.fx.push({ kind: 'ring3d', x: t.x, y: t.y + t.r * 0.85, maxR: 55, col: '#ffffff', t: 0.3, dur: 0.3 });
+      if (t.unstopT <= 0) { t.airT = t.airDur = 0.5; t.kx += dx * 24; t.ky += dy * 24; }
+      S.flashT = 0.18;
       const dmg = e.atk * 4.5;
       damage(t, dmg, e, { crit: true, col: '#9fd0ff' });
       if (e.promo >= 3) {
@@ -1594,7 +1657,7 @@ function superCast(e) {
         }
         S.fx.push({ kind: 'line', x1: e.x, y1: e.y, x2: t.x + dx * 220, y2: t.y + dy * 220, col: '#9fd0ff', t: 0.35, dur: 0.35 });
       }
-      ring(t.x, t.y, 70, '#9fd0ff', 0.4); floatTxt(e.x, e.y - 16, 'Palm Strike!', '#cfe8ff', true); break;
+      floatTxt(e.x, e.y + e.r * 1.6, 'Palm Strike!', '#cfe8ff'); break;
     }
     case 'nyx': {
       if (!enemiesOf(e).length) return;
@@ -2028,8 +2091,8 @@ function promoHtml(h, round) {
 }
 function showInfo(u, where) {
   const d = defOf(u), m = LV[u.lvl - 1];
-  const stars = '★'.repeat(u.lvl);
-  $('info').innerHTML = `<b>${d.name}</b> <span style="color:var(--gold)">${stars}</span> · ${d.title} · ${d.role}${where === 'enemy' ? ' <span style="color:var(--foe)">(rival)</span>' : ''}
+  const lvTxt = u.lvl === 3 ? '<span style="color:#ffd23f">◆◆◆ MAX</span>' : `<span style="color:${GEM_COLS[u.lvl - 1][0]}">${'◆'.repeat(u.lvl)} Lv ${u.lvl}</span>`;
+  $('info').innerHTML = `<b>${d.name}</b> ${lvTxt} · ${d.title} · ${d.role}${where === 'enemy' ? ' <span style="color:var(--foe)">(rival)</span>' : ''}
     <div class="stats">❤ ${Math.round(d.hp * m)} &nbsp; ⚔ ${Math.round(d.atk * m)} &nbsp; ${isRanged(d) ? '🏹 Ranged' : '🗡 Melee'} &nbsp; ⏱ ${d.cd}s</div>
     <div>${d.desc}</div>${u.hero ? promoHtml(d, S.round) : ''}${u.key === 'fern' && u.hero ? '<div style="color:#9bff8a">' + (S.sel && S.sel.zone === 'board' && S.sel.r <= 1 ? '🦌 Front 2 rows: will fight in Deer Form' : 'Put her in the front 2 rows for Deer Form') + '</div>' : ''}${u.boast ? '<div style="color:#ffb0d0">Boast: +' + (u.boast * 15) + '% attack speed</div>' : ''}`;
 }
@@ -2392,6 +2455,8 @@ function draw3D(layer, now) {
   for (const f of S.fx) {
     if (f.kind === 'hammer3d' && f.a) drawHammer3D(f, layer);
     else if (f.kind === 'vortex') drawVortex(f, layer, now);
+    else if (f.kind === 'leafvortex') drawLeafVortex(f, layer, now);
+    else if (f.kind === 'helm' && layer === 'front' && f.a) drawHelm(f);
   }
 }
 function drawHammer3D(f, layer) {
@@ -2422,6 +2487,44 @@ function drawHammer3D(f, layer) {
     ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(-6, -12, 4, 24);
   }
   ctx.restore();
+}
+function drawHelm(f) {
+  const e = f.a, p = 1 - f.t / f.dur, big = f.big ? 1.3 : 1;
+  const pop = p < 0.25 ? easeOutBack(p / 0.25) : 1, a = Math.min(1, (1 - p) * 5);
+  const cx = e.x + (e.kx || 0), cy = e.y + (e.ky || 0) - e.r * 2.3 - 8 - p * 10, R = Math.max(4, 20 * big * pop), rot = p * Math.PI * 3.5;
+  ctx.save(); ctx.globalAlpha = a;
+  const gl = ctx.createRadialGradient(cx, cy, 2, cx, cy, R * 2.2); gl.addColorStop(0, f.big ? 'rgba(255,110,60,.55)' : 'rgba(255,220,120,.5)'); gl.addColorStop(1, 'rgba(255,200,90,0)');
+  ctx.fillStyle = gl; ctx.fillRect(cx - R * 2.3, cy - R * 2.3, R * 4.6, R * 4.6);
+  const SQ = 0.55; // tilt
+  const spoke = (i, back) => {
+    const an = rot + i * Math.PI / 4, z = Math.sin(an);
+    if ((z < 0) !== back) return;
+    const ex = cx + Math.cos(an) * R * 1.32, ey = cy + Math.sin(an) * R * 1.32 * SQ;
+    ctx.strokeStyle = back ? '#6a4422' : '#9a6a3a'; ctx.lineWidth = 3.2 * big; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+    circle(ctx, ex, ey, 3.6 * big * (0.85 + 0.25 * (z + 1) / 2), back ? '#8a5a2a' : '#c9862a');
+  };
+  for (let i = 0; i < 8; i++) spoke(i, true);
+  ctx.strokeStyle = '#7a4a1a'; ctx.lineWidth = 5 * big; ctx.beginPath(); ctx.ellipse(cx, cy, R, R * SQ, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#ffd36b'; ctx.lineWidth = 1.8 * big; ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(1, R - 2.5 * big), Math.max(1, R - 2.5 * big) * SQ, 0, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 8; i++) spoke(i, false);
+  circle(ctx, cx, cy, 5 * big, '#ffd36b', '#7a4a1a', 2);
+  ctx.restore();
+}
+function drawLeafVortex(f, layer, now) {
+  const e = f.a; if (!e) return;
+  const cx = e.x + (e.kx || 0), cy = e.y + (e.ky || 0), p = 1 - f.t / f.dur, n = f.n || 12;
+  const alpha = Math.min(1, p * 5, (1 - p) * 4);
+  for (let i = 0; i < n; i++) {
+    const ang = i / n * Math.PI * 2 + p * Math.PI * 4, z = Math.sin(ang);
+    if ((z < 0) !== (layer === 'back')) continue;
+    const r = e.r * (1.2 + 0.6 * Math.sin(p * Math.PI)), x = cx + Math.cos(ang) * r;
+    const y = cy + 16 - (i / n) * 60 - p * 25 + z * r * 0.3, sc = 0.7 + 0.5 * (z + 1) / 2;
+    ctx.save(); ctx.globalAlpha = alpha * (0.6 + 0.4 * (z + 1) / 2); ctx.translate(x, y); ctx.rotate(ang + now * 3);
+    const col = ['#7ee081', '#5fbf5a', '#ff9ac8', '#c9a6ff'][i % 4];
+    ell(ctx, 0, 0, 6 * sc, 3 * sc, col); ctx.strokeStyle = 'rgba(30,90,40,.5)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-6 * sc, 0); ctx.lineTo(6 * sc, 0); ctx.stroke();
+    ctx.restore();
+  }
 }
 function drawVortex(f, layer, now) {
   const e = f.a, cx = e ? e.x + (e.kx || 0) : f.x, cy = e ? e.y + (e.ky || 0) : f.y, p = 1 - f.t / f.dur;
@@ -2517,8 +2620,10 @@ function drawBattle(dt) {
     }
     if (e.reflectT > 0) drawShieldDome(e, x, y, now, 'back');
     if (e.burrow || e.reviveT > 0) continue;
+    if (e.lvl === 3 && !e.hidden) drawMaxGlow(ctx, x, y, e.r, ps.alpha);
     drawSprite(ctx, e.drawKey || e.key, x, y, e.r, { frame, flip: e.faceS, sx: ps.sx, sy: ps.sy, rot: ps.rot * 0.5, alpha: ps.alpha * (e.hidden ? 0.2 + Math.sin(now * 4) * 0.05 : 1), flash: e.flash > 0 ? e.flash / 0.12 : 0 });
     if (e.hidden) continue;
+    if (e.lvl === 3) drawMaxSparkles(ctx, x, y, e.r, ps.alpha);
     if (e.reflectT > 0) drawShieldDome(e, x, y, now, 'front');
     if (ps.alpha < 1) continue;
     if (e.slowT > 0) {
@@ -2544,7 +2649,7 @@ function drawBattle(dt) {
       const pw = bw / e.maxE;
       for (let i = 0; i < e.maxE; i++) { ctx.fillStyle = i < e.energy ? '#ffe14d' : '#4a4a66'; ctx.fillRect(bx + i * pw + 1, by + 6.5, pw - 2, 3); }
     }
-    for (let i = 0; i < e.lvl; i++) star(ctx, bx + 4 + i * 8, by + (e.maxE ? 14 : 10), 3.5, '#ffd23f');
+    for (let i = 0; i < e.lvl; i++) gem(ctx, bx + 5 + i * 10, by + (e.maxE ? 16 : 12), 4.2, e.lvl);
     // status icons
     let ix = bx + bw + 6;
     const icon = (col, ch) => { circle(ctx, ix, by + 2, 6, col, '#000a', 1.5); ctx.fillStyle = '#fff'; ctx.font = 'bold 8px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(ch, ix, by + 5); ix += 13; };
@@ -2725,6 +2830,69 @@ function drawFx(dt) {
       for (const [lw, col] of [[22 * (1 - k) + 2, f.col + '66'], [7 * (1 - k) + 1, '#ffffff']]) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke(); }
       ctx.restore();
     }
+    if (f.kind === 'afterimage') {
+      ctx.save(); ctx.globalAlpha = 0.6 * (1 - k);
+      circle(ctx, f.x, f.y, f.r * 1.1, 'rgba(120,200,255,.35)');
+      drawSprite(ctx, f.key, f.x, f.y, f.r, { flip: f.face, flash: 1, frame: 'a2' });
+      ctx.restore();
+    }
+    if (f.kind === 'palm') {
+      const sc = (k < 0.15 ? 0.4 + (k / 0.15) * 1.5 : 1.9 - (k - 0.15) * 0.6);
+      ctx.save(); ctx.translate(f.x, f.y - 10); ctx.rotate(0.25 * f.dir); ctx.scale(sc * f.dir, sc); ctx.globalAlpha = k < 0.55 ? 1 : Math.max(0, 1 - (k - 0.55) / 0.45);
+      const gl = ctx.createRadialGradient(0, 0, 4, 0, 0, 42); gl.addColorStop(0, 'rgba(200,240,255,.9)'); gl.addColorStop(1, 'rgba(120,200,255,0)');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, 42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(170,225,255,.9)'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(-13, -6, 26, 22, 8); ctx.fill(); ctx.stroke();
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.roundRect(-12 + i * 6.5, -24 + Math.abs(i - 1.5) * 2.5, 5.5, 20, 3); ctx.fill(); ctx.stroke(); }
+      ctx.save(); ctx.translate(14, 4); ctx.rotate(0.7); ctx.beginPath(); ctx.roundRect(-3, -12, 6, 15, 3); ctx.fill(); ctx.stroke(); ctx.restore();
+      ctx.restore();
+    }
+    if (f.kind === 'speedlines') {
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2 + 0.2, r1 = 24 + k * 50, r2 = r1 + 26 * (1 - k); ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a) * r1, f.y + Math.sin(a) * r1 * 0.75); ctx.lineTo(f.x + Math.cos(a) * r2, f.y + Math.sin(a) * r2 * 0.75); ctx.stroke(); }
+      ctx.restore();
+    }
+    if (f.kind === 'coins') {
+      let sd = f.seed; const rr = () => { sd = (sd * 9301 + 49297) % 233280; return sd / 233280; };
+      const tt = f.dur - f.t;
+      for (let i = 0; i < (f.n || 16); i++) {
+        const vx = (rr() - 0.5) * 240, vy = -170 - rr() * 170, sp = rr() * 6;
+        const x = f.x + vx * tt, y = f.y + vy * tt + 260 * tt * tt;
+        const w = Math.abs(Math.cos(tt * 14 + sp)) * 5 + 0.8;
+        ctx.save(); ctx.globalAlpha = Math.min(1, f.t * 3);
+        ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.ellipse(x, y, w, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 1.2; ctx.stroke();
+        if (w > 3) { ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.ellipse(x - w * 0.3, y - 1.5, w * 0.25, 1.6, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+    }
+    if (f.kind === 'orbfly' && f.a && f.b) {
+      const ax = f.a.x, ay = f.a.y - 20, bx = f.b.x, by = f.b.y - 6, mx = (ax + bx) / 2, my = Math.min(ay, by) - 55;
+      const q = Math.min(1, k / 0.85);
+      const x = (1 - q) * (1 - q) * ax + 2 * (1 - q) * q * mx + q * q * bx, y = (1 - q) * (1 - q) * ay + 2 * (1 - q) * q * my + q * q * by;
+      ctx.save();
+      if (k < 0.85) {
+        circle(ctx, x, y, 11, f.col + '55'); circle(ctx, x, y, 5.5, f.col); circle(ctx, x - 1.5, y - 1.5, 2, '#fff');
+        if (f.leaf) { ctx.translate(x, y); ctx.rotate(k * 12); ell(ctx, 8, 0, 4, 2, '#7ee081'); ell(ctx, -8, 0, 4, 2, '#ff9ac8'); }
+      } else {
+        const z = (k - 0.85) / 0.15; ctx.globalAlpha = 1 - z;
+        ctx.strokeStyle = f.col; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(bx, by, 10 + z * 22, (10 + z * 22) * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+        for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; twinkle(ctx, bx + Math.cos(a) * (8 + z * 20), by + Math.sin(a) * (8 + z * 20) * 0.8, 4, '#fff'); }
+      }
+      ctx.restore();
+    }
+    if (f.kind === 'runecircle' && f.a) {
+      const e = f.a, x = e.x + (e.kx || 0), y = e.y + (e.ky || 0) + e.r * 0.9, pop = Math.min(1, k * 4), fade = Math.min(1, f.t * 3);
+      const R = e.r * 2 * (0.5 + 0.5 * pop), tt = performance.now() / 1000;
+      ctx.save(); ctx.globalAlpha = fade;
+      const g = ctx.createRadialGradient(x, y, 2, x, y, R); g.addColorStop(0, 'rgba(200,170,255,.5)'); g.addColorStop(1, 'rgba(126,224,129,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#d9c2ff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.34, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#9bff8a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(x, y, R * 0.7, R * 0.24, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = tt * 1.5 + i * Math.PI * 2 / 3 * (i % 2 ? 1 : 1.0001); ctx.lineTo(x + Math.cos(i * Math.PI * 2 / 3 + tt) * R * 0.7, y + Math.sin(i * Math.PI * 2 / 3 + tt) * R * 0.24); } ctx.closePath(); ctx.strokeStyle = 'rgba(217,194,255,.7)'; ctx.stroke();
+      for (let i = 0; i < 10; i++) { const a = -tt * 1.2 + i * Math.PI / 5; twinkle(ctx, x + Math.cos(a) * R * 0.86, y + Math.sin(a) * R * 0.29, 3.5, i % 2 ? '#d9c2ff' : '#9bff8a'); }
+      ctx.restore();
+    }
     if (f.kind === 'ring3d') {
       const ek = 1 - (1 - k) * (1 - k), r = f.maxR * ek;
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k);
@@ -2850,10 +3018,12 @@ function frame(now) {
     ctx.setTransform(DPR, 0, 0, DPR, -VIEW.x * DPR, 0);
     ctx.save();
     if (shakeAmt > 0) { ctx.translate((Math.random() - 0.5) * shakeAmt, (Math.random() - 0.5) * shakeAmt); shakeAmt = Math.max(0, shakeAmt - rdt * 40); }
+    try {
     drawField();
     if (S.phase === 'plan' || S.phase === 'hero') { drawTiles(); drawPlanUnits(); }
     else { drawBattle(sdt); }
     drawFx(hitStopT > 0 ? 0 : sdt);
+    } catch (err) { console.warn('draw error', err); S.fx = S.fx.filter(f => !f._bad); }
     ctx.restore();
     if (S.flashT > 0) { S.flashT -= rdt; ctx.fillStyle = `rgba(255,255,255,${Math.max(0, S.flashT) * 1.4})`; ctx.fillRect(0, 0, W, H); }
   }
@@ -3490,7 +3660,7 @@ function showHowTo() {
   p.insertAdjacentHTML('beforeend', `<div class="help">
   <b>1. Pick a hero.</b> Your hero fights every round. Each attack fills its <b style="color:#ffe14d">energy bar</b>, and a full bar fires its <b>Super</b>. Heroes unlock <b>Promotions</b> (extra powers) in rounds 3, 5 and 7.<br>
   <b>2. Shop.</b> Each round you get gold. The shop only offers minis from your deck (build decks from the main menu). Tap a card to buy that mini. Refresh the shop for 1 gold.<br>
-  <b>3. Level up.</b> Buy a mini you already own to upgrade it, up to ★★★.<br>
+  <b>3. Level up.</b> Buy a mini you already own to upgrade it: <span style="color:#d08a4a">◆</span> bronze Lv 1 → <span style="color:#dfe4ec">◆◆</span> silver Lv 2 → <span style="color:#ffd23f">◆◆◆</span> gold MAX. Maxed minis glow gold.<br>
   <b>4. Place your team.</b> Bought minis go straight onto your 4×4 board. Drag them to move or swap. Tanks and fighters go in the <b>front</b> rows. Ranged minis and healers go in the <b>back</b> rows. If the board is full, sell a mini to make room. You can field more minis each round (3 → 6).<br>
   <b>5. Fight!</b> The battle plays out on its own. Tap <b>Speed up</b> to watch at 2x.<br>
   <b>6. Win.</b> Losing a round costs 1 HP, plus 1 for each enemy still standing. Knock the rival from 20 HP to 0 to win.<br><br>
