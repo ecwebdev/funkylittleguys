@@ -1425,7 +1425,7 @@ function damage(t, amt, src, opt) {
   t.hp -= a; t.flash = 0.12; t.hitT = 0.15;
   if (src) {
     src.dmgDealt += amt;
-    if ((src.stealT > 0 || opt.steal) && src.alive) { heal(src, amt * (opt.steal || src.stealX || 1), { quiet: Math.random() < 0.6, col: '#ff6a9a' }); S.parts.push(part(src.x, src.y, '#ff5a8a', 50)); }
+    if ((src.stealT > 0 || opt.steal) && src.alive) { heal(src, amt * (opt.steal || src.stealX || 1), { quiet: Math.random() < 0.6, col: '#ff6a9a' }); if (src !== t && (src.lastStream || 0) < S.bt - 0.25) { src.lastStream = S.bt; S.fx.push({ kind: 'stream', a: t, b: src, t: 0.55, dur: 0.55 }); } }
     const dx = t.x - src.x, dy = t.y - src.y, dd = Math.hypot(dx, dy) || 1, kb = t.unstopT > 0 ? 0 : opt.crit ? 18 : 7;
     t.kx = Math.max(-22, Math.min(22, t.kx + dx / dd * kb)); t.ky = Math.max(-22, Math.min(22, t.ky + dy / dd * kb));
     if (t.reflectT > 0 && !opt.reflected && src.alive && src !== t) damage(src, amt * 0.4, t, { col: '#ffe08a', reflected: true });
@@ -1567,11 +1567,15 @@ function superCast(e) {
       near.forEach(o => {
         const d = dist(o, e) || 1, dx = (o.x - e.x) / d, dy = (o.y - e.y) / d;
         damage(o, e.atk * 1.6 * (e.promo >= 3 ? 1.3 : 1), e, { noSteal: false });
-        if (o.unstopT <= 0) { o.x += dx * 40; o.y += dy * 40; o.kx += dx * 20; o.ky += dy * 20; }
+        if (o.unstopT <= 0) { o.x += dx * 40; o.y += dy * 40; o.kx += dx * 20; o.ky += dy * 20; o.airT = o.airDur = 0.45; }
         stun(o, 2);
       });
-      S.fx.push({ kind: 'spin', x: e.x, y: e.y, t: 0.4, dur: 0.4 });
-      ring(e.x, e.y, 110, '#ffd36b', 0.45); ring(e.x, e.y, 70, '#ffffff', 0.3); shake(9); hitStop(0.08);
+      e.spinT = 0.6;
+      S.fx.push({ kind: 'hammer3d', a: e, t: 0.6, dur: 0.6 });
+      S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 120, col: '#ffd36b', t: 0.55, dur: 0.55, cracks: 1, seed: Math.random() * 6 });
+      S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 80, col: '#ffffff', t: 0.35, dur: 0.35 });
+      for (let i = 0; i < 22; i++) { const a = i / 22 * Math.PI * 2; S.parts.push({ x: e.x + Math.cos(a) * 30, y: e.y + e.r * 0.8 + Math.sin(a) * 10, vx: Math.cos(a) * 170, vy: Math.sin(a) * 50 - 70, t: 0.6, col: i % 2 ? '#c9b48a' : '#e8dcc0', s: 4 }); }
+      shake(9); hitStop(0.08);
       floatTxt(e.x, e.y - 16, 'Hammer Spin!', '#ffe08a', true); break;
     }
     case 'kenji': {
@@ -1593,13 +1597,10 @@ function superCast(e) {
       ring(t.x, t.y, 70, '#9fd0ff', 0.4); floatTxt(e.x, e.y - 16, 'Palm Strike!', '#cfe8ff', true); break;
     }
     case 'nyx': {
-      const en = enemiesOf(e); if (!en.length) return;
-      for (let i = 0; i < 4; i++) {
-        const t = rnd(en);
-        S.projs.push({ x: e.x + (Math.random() - 0.5) * 20, y: e.y - 14, t, dmg: e.atk * 1.1, src: e, spd: 260 + Math.random() * 80, col: '#d24a7a', kind: 'bat',
-          d0: dist(e, t), h: 0, trail: [], ang: 0, spin: Math.random() * 6 });
-      }
-      if (e.promo >= 3) e.stealT = 2;
+      if (!enemiesOf(e).length) return;
+      S.fx.push({ kind: 'vortex', a: e, t: 1.0, dur: 1.0, n: 16 });
+      e.batQ = 0.75;
+      if (e.promo >= 3) e.stealT = 2.5;
       floatTxt(e.x, e.y - 16, 'Bats!', '#ff9ac0', true); break;
     }
     case 'fern': {
@@ -1617,16 +1618,28 @@ function superCast(e) {
     }
   }
 }
+function releaseBats(e) {
+  const en = enemiesOf(e); if (!en.length || !e.alive) return;
+  for (let i = 0; i < 4; i++) {
+    const t = rnd(en), a = i / 4 * Math.PI * 2;
+    S.projs.push({ x: e.x + Math.cos(a) * e.r * 1.4, y: e.y - 18 + Math.sin(a) * e.r * 0.45, t, dmg: e.atk * 1.1, src: e, spd: 230 + Math.random() * 70, col: '#d24a7a', kind: 'bat', arcH: true,
+      d0: dist(e, t), h: 0, trail: [], ang: 0, spin: Math.random() * 6 });
+  }
+  S.fx.push({ kind: 'ring3d', x: e.x, y: e.y + e.r * 0.85, maxR: 70, col: '#ff5a8a', t: 0.4, dur: 0.4 });
+}
 function ambush(e) {
   e.ambushed = true;
   const en = enemiesOf(e); if (!en.length) return;
   const t = en.reduce((a, b) => (b.hp < a.hp ? b : a));
-  for (let i = 0; i < 14; i++) S.parts.push(part(e.x, e.y, '#5a1a48', 110));
+  const x0 = e.x, y0 = e.y;
+  S.fx.push({ kind: 'vortex', x: x0, y: y0, t: 0.45, dur: 0.45, n: 9, out: 1 });
   e.x = t.x + (Math.random() - 0.5) * 16; e.y = Math.max(70, Math.min(640, t.y - 44 * e.side));
-  for (let i = 0; i < 14; i++) S.parts.push(part(e.x, e.y, '#ff5a8a', 110));
+  S.fx.push({ kind: 'batflight', x0, y0: y0 - 10, x1: e.x, y1: e.y - 10, t: 0.4, dur: 0.4 });
+  S.fx.push({ kind: 'vortex', a: e, t: 0.5, dur: 0.5, n: 9, inn: 1 });
+  e.spawnT = 0.35;
   e.target = t; e.retT = 1.5; e.unstopT = 1; e.lx = 0; e.ly = e.side; e.atkDur = 0.3; e.atkAnim = 0.3;
   damage(t, e.atk * 2.4, e, { crit: true, col: '#ff5a8a', steal: 1 });
-  S.fx.push({ kind: 'slash', x: t.x, y: t.y - 4, ang: Math.PI / 2 * e.side, t: 0.3, dur: 0.3, col: '#ff5a8a', flip: false });
+  S.fx.push({ kind: 'crescent', x: t.x, y: t.y - 6, t: 0.4, dur: 0.4, dir: e.x < t.x ? 1 : -1 });
   if (e.promo >= 3) e.stealT = 2;
   floatTxt(e.x, e.y - 24, 'Ambush!', '#ff9ac0', true);
 }
@@ -1785,7 +1798,9 @@ function step(dt) {
     if (!e.alive) continue;
     e.cdT -= dt; e.slowT -= dt; e.buffT -= dt; e.flash -= dt; e.retT -= dt;
     e.spawnT -= dt; e.atkAnim -= dt; e.hitT -= dt; e.castT -= dt; if (e.rootT > 0) e.rootT -= dt;
-    e.ragT -= dt; e.invulnT -= dt; e.unstopT -= dt; e.reflectT -= dt; e.weakT -= dt; e.antiHealT -= dt; e.empT -= dt; e.stealT -= dt; e.eCdT -= dt;
+    e.ragT -= dt; e.invulnT -= dt; if (e.spinT > 0) e.spinT -= dt;
+    if (e.airT > 0) { e.airT -= dt; e.jumpH = e.airT > 0 ? Math.sin(Math.PI * (1 - e.airT / e.airDur)) * 26 : 0; }
+    if (e.batQ > 0) { e.batQ -= dt; if (e.batQ <= 0) releaseBats(e); } e.unstopT -= dt; e.reflectT -= dt; e.weakT -= dt; e.antiHealT -= dt; e.empT -= dt; e.stealT -= dt; e.eCdT -= dt;
     if (e.unstopT > 0) { e.stunT = 0; e.slowT = 0; }
     if (e.wShieldBy && e.shield > 0 && e.wShieldBy.promo >= 1) e.ragT = Math.max(e.ragT, 0.15);
     for (const h of e.hots) {
@@ -1881,7 +1896,7 @@ function step(dt) {
     p.trail.push([p.x, p.y - p.h]); if (p.trail.length > 12) p.trail.shift();
     p.x += dx / d * p.spd * dt; p.y += dy / d * p.spd * dt;
     p.ang = Math.atan2(dy, dx); p.spin += dt * 12;
-    if (p.lob) p.h = Math.sin(Math.PI * Math.max(0, Math.min(1, 1 - d / Math.max(p.d0, 1)))) * Math.min(70, p.d0 * 0.35);
+    if (p.lob || p.arcH) p.h = Math.sin(Math.PI * Math.max(0, Math.min(1, 1 - d / Math.max(p.d0, 1)))) * Math.min(p.arcH ? 55 : 70, p.d0 * 0.35);
   }
   S.projs = S.projs.filter(p => !p.dead);
   // end check
@@ -2364,6 +2379,75 @@ function orbitRings(x, y, R, now, back) {
   }
 }
 
+// ---------- layered 3D effects (parts behind and in front of characters) ----------
+function drawBat(g, x, y, sc, flap, col) {
+  const f = Math.sin(flap) * 4 * sc;
+  g.fillStyle = col || '#3a1030';
+  g.beginPath(); g.moveTo(x - 2 * sc, y); g.lineTo(x - 11 * sc, y - 5 * sc - f); g.lineTo(x - 8 * sc, y + 1 * sc); g.lineTo(x - 5 * sc, y + 3 * sc); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(x + 2 * sc, y); g.lineTo(x + 11 * sc, y - 5 * sc - f); g.lineTo(x + 8 * sc, y + 1 * sc); g.lineTo(x + 5 * sc, y + 3 * sc); g.closePath(); g.fill();
+  g.fillStyle = '#5a1a48'; g.beginPath(); g.arc(x, y, 4 * sc, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ff4a6a'; g.beginPath(); g.arc(x - 1.5 * sc, y - 1 * sc, 1 * sc, 0, Math.PI * 2); g.arc(x + 1.5 * sc, y - 1 * sc, 1 * sc, 0, Math.PI * 2); g.fill();
+}
+function draw3D(layer, now) {
+  for (const f of S.fx) {
+    if (f.kind === 'hammer3d' && f.a) drawHammer3D(f, layer);
+    else if (f.kind === 'vortex') drawVortex(f, layer, now);
+  }
+}
+function drawHammer3D(f, layer) {
+  const e = f.a, cx = e.x + (e.kx || 0), cy = e.y + (e.ky || 0) - 4, p = 1 - f.t / f.dur;
+  const R = 58, ry = 0.34, ang = -Math.PI / 2 + p * Math.PI * 4 * (e.faceS >= 0 ? 1 : -1);
+  const dirS = e.faceS >= 0 ? 1 : -1, fade = Math.min(1, f.t / 0.12);
+  ctx.save();
+  // motion-blur trail around the ellipse
+  for (let k = 0; k < 18; k++) {
+    const a1 = ang - dirS * k * 0.13, a2 = a1 - dirS * 0.13, z = Math.sin(a1);
+    if ((z < 0) !== (layer === 'back')) continue;
+    const depth = 0.75 + 0.35 * (z + 1) / 2;
+    ctx.globalAlpha = (1 - k / 18) * 0.55 * fade;
+    ctx.strokeStyle = k < 4 ? '#ffffff' : '#cfe0ff'; ctx.lineWidth = (12 - k * 0.55) * depth; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R * ry); ctx.lineTo(cx + Math.cos(a2) * R, cy + Math.sin(a2) * R * ry); ctx.stroke();
+  }
+  // the hammer itself
+  const z = Math.sin(ang);
+  if ((z < 0) === (layer === 'back')) {
+    const depth = 0.7 + 0.45 * (z + 1) / 2, hx = cx + Math.cos(ang) * R, hy = cy + Math.sin(ang) * R * ry;
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 4 * depth; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * 14, cy + Math.sin(ang) * 14 * ry); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.translate(hx, hy); ctx.rotate(Math.atan2(Math.cos(ang) * ry, -Math.sin(ang)) + Math.PI / 2); ctx.scale(depth, depth);
+    ctx.fillStyle = '#a3afc2'; ctx.beginPath(); ctx.roundRect(-9, -14, 18, 28, 4); ctx.fill();
+    ctx.strokeStyle = '#3c4a60'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#ffd36b'; ctx.fillRect(-9, -3, 18, 6);
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(-6, -12, 4, 24);
+  }
+  ctx.restore();
+}
+function drawVortex(f, layer, now) {
+  const e = f.a, cx = e ? e.x + (e.kx || 0) : f.x, cy = e ? e.y + (e.ky || 0) : f.y, p = 1 - f.t / f.dur;
+  const n = f.n || 10, base = (e && e.r) || 26;
+  const alpha = Math.min(1, p * 5, (1 - p) * 4);
+  if (layer === 'back') {
+    // crimson mist column
+    ctx.save(); ctx.globalAlpha = 0.4 * alpha;
+    const g = ctx.createRadialGradient(cx, cy - 14, 4, cx, cy - 14, base * 2);
+    g.addColorStop(0, 'rgba(255,70,120,.6)'); g.addColorStop(1, 'rgba(90,10,60,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy - 14, base * 1.9, base * 1.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  for (let i = 0; i < n; i++) {
+    const ang = i / n * Math.PI * 2 + p * Math.PI * 5 * (f.out ? 1.4 : 1);
+    const spread = f.out ? 1 + p * 1.6 : f.inn ? 2.4 - p * 1.4 : 1.4 + 0.7 * Math.sin(p * Math.PI);
+    const r = base * spread, z = Math.sin(ang);
+    if ((z < 0) !== (layer === 'back')) continue;
+    const x = cx + Math.cos(ang) * r, y = cy + 14 - (f.out || f.inn ? 30 : (i / n) * 62) - p * (f.out ? 40 : 18) + z * r * 0.3;
+    const sc = (0.75 + 0.5 * (z + 1) / 2) * 1.25;
+    ctx.save(); ctx.globalAlpha = alpha * (0.55 + 0.45 * (z + 1) / 2);
+    drawBat(ctx, x, y, sc, now * 30 + i, z < 0 ? '#2a0820' : '#3a1030');
+    ctx.restore();
+  }
+}
+
 const easeOutBack = p => 1 + 2.70158 * Math.pow(p - 1, 3) + 1.70158 * Math.pow(p - 1, 2);
 function entPose(e, now) {
   let ox = e.kx, oy = e.ky, sx = 1, sy = 1, rot = 0, alpha = 1;
@@ -2385,6 +2469,7 @@ function entPose(e, now) {
   }
   if (e.hitT > 0) { const h = e.hitT / 0.15; sx *= 1 + h * 0.3; sy *= 1 - h * 0.28; rot += (Math.random() - 0.5) * h * 0.25; }
   if (e.stunT > 0) rot += Math.sin(now * 14) * 0.13;
+  if (e.spinT > 0) { const c2 = Math.cos((1 - e.spinT / 0.6) * Math.PI * 4); sx *= Math.sign(c2 || 1) * Math.max(0.25, Math.abs(c2)); oy -= Math.sin((1 - e.spinT / 0.6) * Math.PI) * 6; }
   if (e.key === 'twirla' && e.atkAnim > 0) rot += (1 - e.atkAnim / e.atkDur) * Math.PI * 2 * (e.faceS >= 0 ? 1 : -1);
   if (e.jumpH) { oy -= e.jumpH; rot += (e.faceS >= 0 ? 1 : -1) * Math.sin(Math.min(1, e.jumpH / 55) * Math.PI) * 0.3; }
   if (e.spawnT > 0) {
@@ -2419,6 +2504,7 @@ function drawBattle(dt) {
     if (e.reviveT > 0) { drawBones(e, now); continue; }
     groundMark(ctx, e.x + e.kx, e.y + e.ky, e.r * (1 - Math.min(0.3, -ps.oy / 60)), team, ps.alpha * (e.hidden ? 0.3 : 1));
   }
+  draw3D('back', now);
   // units
   for (const e of list) {
     const ps = poses.get(e);
@@ -2481,6 +2567,7 @@ function drawBattle(dt) {
     }
     if (e.stunT > 0 && !(e.rootT > 0)) { const tt = now * 5; for (let i = 0; i < 3; i++) star(ctx, x + Math.cos(tt + i * 2.1) * 15, (e.u.hero ? by - 10 : y - e.r - 24) + Math.sin(tt + i * 2.1) * 4, 5, '#ffe56b'); }
   }
+  draw3D('front', now);
   drawProjectiles(now);
   drawFightIntro();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center';
@@ -2572,6 +2659,7 @@ function drawProjectiles(now) {
         ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, 6.5, 0, Math.PI * 2); ctx.stroke();
         break;
       case 'bat': {
+        if (p.arcH) { const hs = 0.8 + p.h / 160; ctx.scale(hs, hs); }
         const fl = Math.sin(now * 30 + p.spin) * 4;
         ctx.translate(0, Math.sin(now * 8 + p.spin) * 4);
         tri(ctx, [-2, 0, -11, -4 - fl, -7, 3], '#3a1030'); tri(ctx, [2, 0, 11, -4 - fl, 7, 3], '#3a1030');
@@ -2636,6 +2724,50 @@ function drawFx(dt) {
       ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k); ctx.lineCap = 'round';
       for (const [lw, col] of [[22 * (1 - k) + 2, f.col + '66'], [7 * (1 - k) + 1, '#ffffff']]) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke(); }
       ctx.restore();
+    }
+    if (f.kind === 'ring3d') {
+      const ek = 1 - (1 - k) * (1 - k), r = f.maxR * ek;
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k);
+      ctx.strokeStyle = f.col; ctx.lineWidth = 8 * (1 - k) + 1.5;
+      ctx.beginPath(); ctx.ellipse(f.x, f.y, r, r * 0.34, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha *= 0.35; ctx.fillStyle = f.col; ctx.beginPath(); ctx.ellipse(f.x, f.y, r, r * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+      if (f.cracks) {
+        ctx.globalAlpha = Math.max(0, 1 - k * 1.2); ctx.strokeStyle = '#5a4630'; ctx.lineWidth = 2.5;
+        for (let i = 0; i < 8; i++) {
+          const a = f.seed + i * Math.PI / 4, l = f.maxR * 0.75 * Math.min(1, k * 3);
+          ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a) * 14, f.y + Math.sin(a) * 5);
+          ctx.lineTo(f.x + Math.cos(a + 0.15) * l * 0.55, f.y + Math.sin(a + 0.15) * l * 0.55 * 0.34);
+          ctx.lineTo(f.x + Math.cos(a - 0.05) * l, f.y + Math.sin(a - 0.05) * l * 0.34); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    if (f.kind === 'crescent') {
+      ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(-0.45 * f.dir); ctx.scale(1, 0.42);
+      ctx.globalAlpha = Math.max(0, 1 - k * 0.9);
+      const a0 = -Math.PI * 0.9, a1 = a0 + Math.PI * 1.5 * Math.min(1, k * 3.5);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(176,20,60,.55)'; ctx.lineWidth = 26 * (1 - k) + 4; ctx.beginPath(); ctx.arc(0, 0, 40, a0, a1); ctx.stroke();
+      ctx.strokeStyle = '#ff5a8a'; ctx.lineWidth = 12 * (1 - k) + 2; ctx.beginPath(); ctx.arc(0, 0, 40, a0, a1); ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 4 * (1 - k) + 1; ctx.beginPath(); ctx.arc(0, 0, 40, a0 + 0.2, a1); ctx.stroke();
+      ctx.restore();
+    }
+    if (f.kind === 'batflight') {
+      for (let i = 0; i < 9; i++) {
+        const q = Math.max(0, Math.min(1, (k - i * 0.03) / 0.76));
+        if (q <= 0 || q >= 1) continue;
+        const x = f.x0 + (f.x1 - f.x0) * q + Math.sin(q * Math.PI * 2 + i) * 9, y = f.y0 + (f.y1 - f.y0) * q - Math.sin(q * Math.PI) * 55 - (i % 3) * 5;
+        ctx.save(); ctx.globalAlpha = Math.min(1, (1 - q) * 4); drawBat(ctx, x, y, 0.9 + Math.sin(q * Math.PI) * 0.55, performance.now() / 33 + i); ctx.restore();
+      }
+    }
+    if (f.kind === 'stream' && f.a && f.b && f.b.alive) {
+      const ax = f.a.x, ay = f.a.y - 8, bx = f.b.x, by = f.b.y - 8, mx = (ax + bx) / 2, my = Math.min(ay, by) - 40;
+      for (let i = 0; i < 5; i++) {
+        const q = Math.max(0, Math.min(1, k * 1.4 - i * 0.09)); if (q <= 0 || q >= 1) continue;
+        const x = (1 - q) * (1 - q) * ax + 2 * (1 - q) * q * mx + q * q * bx, y = (1 - q) * (1 - q) * ay + 2 * (1 - q) * q * my + q * q * by;
+        ctx.globalAlpha = 0.9 * (1 - q * 0.5); circle(ctx, x, y, 6, 'rgba(255,60,110,.35)'); circle(ctx, x, y, 3, '#ff5a8a'); circle(ctx, x - 1, y - 1, 1.2, '#fff');
+      }
+      ctx.globalAlpha = 1;
     }
     if (f.kind === 'muzzle') { ctx.globalAlpha = Math.max(0, 1 - k); circle(ctx, f.x, f.y, 4 + k * 10, f.col + '88'); ctx.globalAlpha = 1; }
     if (f.kind === 'puff') {
@@ -3165,7 +3297,7 @@ function maybeStartOnlineBattle() {
 const EF = [['id', 'id'], ['key', 'k'], ['drawKey', 'dk'], ['side', 's'], ['x', 'x'], ['y', 'y'], ['kx', 'kx'], ['ky', 'ky'], ['r', 'r'], ['hp', 'hp'], ['maxHp', 'mh'], ['hpLag', 'hl'],
   ['shield', 'sh'], ['faceS', 'fs'], ['moving', 'mv'], ['walkT', 'wt'], ['atkAnim', 'aa'], ['atkDur', 'ad'], ['lx', 'lx'], ['ly', 'ly'], ['hitT', 'ht'], ['stunT', 'st'], ['rootT', 'rt'],
   ['spawnT', 'sp'], ['castT', 'ct'], ['flash', 'f'], ['slowT', 'sl'], ['burnT', 'bu'], ['buffT', 'bf'], ['empT', 'em'], ['empX', 'ex'], ['stealT', 'stl'], ['reflectT', 'rf'],
-  ['unstopT', 'un'], ['invulnT', 'iv'], ['ragT', 'rg'], ['weakT', 'wk'], ['antiHealT', 'ah'], ['maxE', 'me'], ['energy', 'en'], ['lvl', 'lv'], ['summon', 'sm'], ['hidden', 'hd'], ['jumpH', 'jh'], ['burrow', 'bw'], ['reviveT', 'rv']];
+  ['unstopT', 'un'], ['invulnT', 'iv'], ['ragT', 'rg'], ['weakT', 'wk'], ['antiHealT', 'ah'], ['maxE', 'me'], ['energy', 'en'], ['lvl', 'lv'], ['summon', 'sm'], ['hidden', 'hd'], ['jumpH', 'jh'], ['burrow', 'bw'], ['reviveT', 'rv'], ['spinT', 'spn']];
 const rn = v => typeof v === 'number' ? Math.round(v * 100) / 100 : (v && typeof v === 'object' ? 1 : v);
 function serFx(f) {
   const o = {};
@@ -3175,7 +3307,7 @@ function serFx(f) {
 function grabNew(arr, ser) { const out = []; for (const it of arr) if (!it._sent) { it._sent = 1; out.push(ser ? ser(it) : it); } return out; }
 function hostSnapshot() {
   const e = S.ents.filter(x => x.alive).map(x => { const o = { h: x.u.hero ? 1 : 0 }; for (const [k, sk] of EF) o[sk] = rn(x[k]); return o; });
-  const p = S.projs.map(q => ({ id: q.id || (q.id = entIdc++), x: rn(q.x), y: rn(q.y), h: rn(q.h || 0), k: q.kind, c: q.col, b: q.big ? 1 : 0, l: q.lob ? 1 : 0, a: rn(q.ang || 0), sp: rn(q.spin || 0) }));
+  const p = S.projs.map(q => ({ id: q.id || (q.id = entIdc++), x: rn(q.x), y: rn(q.y), h: rn(q.h || 0), k: q.kind, c: q.col, b: q.big ? 1 : 0, l: q.lob ? 1 : 0, ah: q.arcH ? 1 : 0, a: rn(q.ang || 0), sp: rn(q.spin || 0) }));
   netSend({ t: 'snap', bt: rn(S.bt), sh: rn(shakeAmt), fl: rn(S.flashT || 0), e, p,
     fx: grabNew(S.fx, serFx), fl2: grabNew(S.floats, f => ({ x: rn(f.x), y: rn(f.y), txt: f.txt, col: f.col, t: f.t, big: f.big })),
     pa: grabNew(S.parts, q => [rn(q.x), rn(q.y), rn(q.vx), rn(q.vy), rn(q.t), q.col, rn(q.s)]),
@@ -3210,7 +3342,7 @@ function guestSnap(m) {
   S.projs = m.p.map(q => {
     const tr = S.ptrail.get(q.id) || []; const y = MIRROR - q.y;
     tr.push([q.x, y - q.h]); if (tr.length > 12) tr.shift(); trails.set(q.id, tr);
-    return { x: q.x, y, h: q.h, kind: q.k, col: q.c, big: !!q.b, lob: !!q.l, ang: -q.a, spin: q.sp, trail: tr };
+    return { x: q.x, y, h: q.h, kind: q.k, col: q.c, big: !!q.b, lob: !!q.l, arcH: !!q.ah, ang: -q.a, spin: q.sp, trail: tr };
   });
   S.ptrail = trails;
   for (const f of m.fx) {
@@ -3218,7 +3350,11 @@ function guestSnap(m) {
     if ('y1' in f) { f.y1 = MIRROR - f.y1; f.y2 = MIRROR - f.y2; }
     if (f.pts) f.pts = f.pts.map(([x, y]) => [x, MIRROR - y]);
     if (f.kind === 'slash') { f.ang = -f.ang; }
-    if (f.kind === 'beam') { f.a = S.gmap.get(f.a); f.b = S.gmap.get(f.b); if (!f.a || !f.b) continue; }
+    if ('a' in f) f.a = S.gmap.get(f.a); if ('b' in f) f.b = S.gmap.get(f.b);
+    if ((f.kind === 'beam' || f.kind === 'stream') && (!f.a || !f.b)) continue;
+    if (f.kind === 'hammer3d' && !f.a) continue;
+    if ('y0' in f) { f.y0 = MIRROR - f.y0; f.y1 = MIRROR - f.y1; }
+    if (f.kind === 'crescent' || f.kind === 'vortex') f.dir = f.dir;
     S.fx.push(f);
   }
   for (const f of m.fl2) { f.y = MIRROR - f.y; S.floats.push(f); }
