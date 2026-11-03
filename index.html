@@ -130,6 +130,28 @@
   .dkpv-hint{font-size:12px;color:var(--gold);animation:pulse 1.6s infinite}
   .dkpv-cv{width:100%;border-radius:10px;display:block;touch-action:manipulation;cursor:pointer}
   .dkpv-sum{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:11px;color:#e8e6ff} .dkpv-sum .chip{background:rgba(255,255,255,.12);border-radius:999px;padding:2px 8px}
+
+  /* deck page colour themes */
+  .panel.deck-themed{color:var(--txt);border-color:rgba(255,255,255,.7);box-shadow:0 10px 30px rgba(0,0,0,.18)}
+  .deck-themed h2,.deck-themed h3{color:var(--txt)}
+  .deck-themed .dkline input{background:#fff;color:var(--txt);border-color:rgba(0,0,0,.12)}
+  .deck-themed .dkcard{background:rgba(255,255,255,.55);color:var(--txt);opacity:.75}
+  .deck-themed .dkcard.on{background:#fff;opacity:1;border-color:var(--accent);box-shadow:0 3px 10px rgba(0,0,0,.12)}
+  .deck-themed .dkcard .chk{color:var(--accent)}
+  .deck-themed .dkinfo{background:rgba(255,255,255,.65);color:var(--txt)}
+  .deck-themed .dkinfo span[style*="--gold"],.deck-themed .dkcard .cost{color:var(--txt)}
+  .deck-themed .dkpv{background:rgba(255,255,255,.4);border-color:rgba(255,255,255,.8)}
+  .deck-themed .dkpv-sum{color:var(--txt)} .deck-themed .dkpv-sum .chip{background:rgba(255,255,255,.7)}
+  .deck-themed .dkpv-hint{color:var(--accent)}
+  .deck-themed .dktabs button{background:rgba(255,255,255,.6);color:var(--txt)}
+  .deck-themed .dktabs button.on{background:#fff;outline:2px solid var(--accent)}
+  .deck-themed .dktabs .act{color:#2aa864}
+  .deck-themed .panel h3 .cnt.ok,.deck-themed h3 .cnt.ok{color:#2aa864}
+  .deck-themed > button:first-child{background:var(--btn);color:#fff}
+  .theme-meadow{background:linear-gradient(#c4ecff,#dff7d0)!important;--txt:#24405a;--mut:#4f6a80;--accent:#2f9ae0;--btn:#3f8fd0}
+  .theme-candy{background:linear-gradient(#ffdcec,#ffe6d6)!important;--txt:#5a2a4a;--mut:#8a5a78;--accent:#e85a9a;--btn:#d9649a}
+  .theme-mint{background:linear-gradient(#c8f5e8,#e8fff6)!important;--txt:#1f4a44;--mut:#4a7a72;--accent:#1fae8a;--btn:#2a9a80}
+  .theme-sunset{background:linear-gradient(#ffd1a0,#ffb4a0)!important;--txt:#5a2a1a;--mut:#8a5040;--accent:#e8642a;--btn:#d9663a}
   .dkwarn{color:#ff9aa6;font-size:13px;text-align:center;margin-top:8px}
 </style>
 </head>
@@ -2300,6 +2322,7 @@ function showDecks() {
 }
 function renderDecks() {
   const p = panelShell('Decks');
+  p.classList.add('deck-themed', 'theme-' + deckTheme);
   const dk = DECKS.decks[deckEdit];
   // tabs
   const tabs = document.createElement('div'); tabs.className = 'dktabs';
@@ -2368,6 +2391,13 @@ function renderDecks() {
 
 // ---------- squad showcase: a little 3D stage where your squad wanders around ----------
 let previewAnim = null;
+let deckTheme = 'meadow';
+const DECK_THEMES = {
+  meadow: { sky: ['#8fd3ff', '#e2f7ff'], plat: ['#a8e890', '#5fb35a'], rim: 'rgba(255,255,255,.7)', beam: '#ffffff', star: '#ffffff', shadow: 'rgba(40,80,40,.25)', ped: ['#ffd23f', '#c9a52a', '#ffe68a'] },
+  candy:  { sky: ['#ffbfdc', '#ffe9dc'], plat: ['#ffc2e0', '#e88ab8'], rim: 'rgba(255,255,255,.75)', beam: '#ffffff', star: '#ffffff', shadow: 'rgba(140,60,100,.25)', ped: ['#fff1a8', '#e8c24a', '#fffbe0'] },
+  mint:   { sky: ['#9fe8d8', '#e6fff8'], plat: ['#9be8cf', '#3fae9a'], rim: 'rgba(255,255,255,.75)', beam: '#ffffff', star: '#ffffff', shadow: 'rgba(30,90,80,.25)', ped: ['#ffd23f', '#c9a52a', '#ffe68a'] },
+  sunset: { sky: ['#ff9a6a', '#ffe2a8'], plat: ['#ffc06a', '#e8743a'], rim: 'rgba(255,240,200,.8)', beam: '#fff3c8', star: '#fff8d0', shadow: 'rgba(120,50,20,.28)', ped: ['#ffe14d', '#c9862a', '#fff1a8'] },
+};
 const QUOTES = {
   shell: 'Shell yeah!', fox: 'Things are heating up!', golem: 'Grum... smash.', owl: 'Chill out!', sprite: "Bloom where you're planted!",
   beetle: 'Bzzt! Shocking!', cat: "Didn't see me, did ya?", shroom: 'Kaboom-cap!', boar: 'CHAAARGE!', nibs: 'Finders keepers!',
@@ -2415,8 +2445,6 @@ function startDeckPreview(c, dk) {
     w.tease = 1.6; w.pause = 1.8;
     const col = (TYPES[w.k] || HEROES[w.k]).color;
     burst(hit.p.x, hit.p.y - hit.p.s * 0.3, col, w.hero ? 30 : 20);
-    for (const b of bubbles) if (b.w === w) b.t = 0;
-    bubbles.push({ w, txt: QUOTES[w.k] || 'Hi!', t: 2.4 });
     deckInfoKey = w.k; renderDeckInfo();
   };
   const t0 = performance.now(); let last = t0;
@@ -2440,17 +2468,20 @@ function startDeckPreview(c, dk) {
     }
     hero.tease = Math.max(0, hero.tease - dt);
     // --- stage ---
-    const bg = g.createLinearGradient(0, 0, 0, PH); bg.addColorStop(0, '#2b2160'); bg.addColorStop(1, '#4a3a8a');
+    const TH = DECK_THEMES[deckTheme];
+    const bg = g.createLinearGradient(0, 0, 0, PH); bg.addColorStop(0, TH.sky[0]); bg.addColorStop(1, TH.sky[1]);
     g.fillStyle = bg; g.fillRect(0, 0, PW, PH);
-    g.save(); g.globalAlpha = 0.16;
-    for (const sx of [110, 330]) { const gr = g.createLinearGradient(sx, 0, cx, PH); gr.addColorStop(0, '#fff6c8'); gr.addColorStop(1, 'rgba(255,246,200,0)'); g.fillStyle = gr; g.beginPath(); g.moveTo(sx - 12, 0); g.lineTo(sx + 12, 0); g.lineTo(cx + 100, PH); g.lineTo(cx - 100, PH); g.closePath(); g.fill(); }
+    // soft clouds
+    for (let i = 0; i < 4; i++) { const qx = ((i * 130 + t * 8) % (PW + 120)) - 60, qy = 22 + (i % 2) * 26; g.fillStyle = 'rgba(255,255,255,.6)'; for (const [dx, dy, r] of [[0, 0, 12], [14, -5, 14], [28, 0, 11]]) { g.beginPath(); g.arc(qx + dx, qy + dy, r, 0, Math.PI * 2); g.fill(); } }
+    g.save(); g.globalAlpha = 0.22;
+    for (const sx of [110, 330]) { const gr = g.createLinearGradient(sx, 0, cx, PH); gr.addColorStop(0, TH.beam); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.beginPath(); g.moveTo(sx - 12, 0); g.lineTo(sx + 12, 0); g.lineTo(cx + 100, PH); g.lineTo(cx - 100, PH); g.closePath(); g.fill(); }
     g.restore();
-    for (let i = 0; i < 14; i++) { const a = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2 + i * 1.3)); g.globalAlpha = a * 0.7; star(g, (i * 67 + 20) % PW, (i * 29 + 12) % (PH * 0.5), 2 + (i % 3), '#ffe68a'); }
+    for (let i = 0; i < 14; i++) { const a = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2 + i * 1.3)); g.globalAlpha = a * 0.8; star(g, (i * 67 + 20) % PW, (i * 29 + 12) % (PH * 0.5), 2 + (i % 3), TH.star); }
     g.globalAlpha = 1;
-    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(cx, cy + 16, RX + 24, RZ + 12, 0, 0, Math.PI * 2); g.fill();
-    const pf = g.createRadialGradient(cx, cy - 10, 20, cx, cy, RX + 20); pf.addColorStop(0, '#9b8cff'); pf.addColorStop(1, '#5a48b8');
+    g.fillStyle = TH.shadow; g.beginPath(); g.ellipse(cx, cy + 16, RX + 24, RZ + 12, 0, 0, Math.PI * 2); g.fill();
+    const pf = g.createRadialGradient(cx, cy - 10, 20, cx, cy, RX + 20); pf.addColorStop(0, TH.plat[0]); pf.addColorStop(1, TH.plat[1]);
     g.fillStyle = pf; g.beginPath(); g.ellipse(cx, cy, RX + 20, RZ + 10, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 2; g.beginPath(); g.ellipse(cx, cy, RX + 20, RZ + 10, 0, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = TH.rim; g.lineWidth = 2.5; g.beginPath(); g.ellipse(cx, cy, RX + 20, RZ + 10, 0, 0, Math.PI * 2); g.stroke();
     // little flowers & grass tufts on the stage
     for (let i = 0; i < 12; i++) { const a = i * 2.39, rr = 0.55 + (i % 3) * 0.15, fx = cx + Math.cos(a) * RX * rr, fy = cy + Math.sin(a) * RZ * rr + 4; g.fillStyle = ['#ff9ac8', '#fff', '#ffe14d'][i % 3]; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(fx + Math.cos(k * 1.57) * 2.2, fy + Math.sin(k * 1.57) * 1.2, 1.6, 0, Math.PI * 2); g.fill(); } }
     // --- draw characters back to front ---
@@ -2458,9 +2489,9 @@ function startDeckPreview(c, dk) {
     for (const w of all) {
       const p = posOf(w);
       if (w.hero) {
-        g.fillStyle = '#c9a52a'; g.beginPath(); g.ellipse(p.x, cy - 2, 44, 11, 0, 0, Math.PI); g.fill(); g.fillRect(p.x - 44, cy - 12, 88, 10);
-        g.fillStyle = '#ffd23f'; g.beginPath(); g.ellipse(p.x, cy - 12, 44, 11, 0, 0, Math.PI * 2); g.fill();
-        g.fillStyle = '#ffe68a'; g.beginPath(); g.ellipse(p.x, cy - 12, 40, 9, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = TH.ped[1]; g.beginPath(); g.ellipse(p.x, cy - 2, 44, 11, 0, 0, Math.PI); g.fill(); g.fillRect(p.x - 44, cy - 12, 88, 10);
+        g.fillStyle = TH.ped[0]; g.beginPath(); g.ellipse(p.x, cy - 12, 44, 11, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = TH.ped[2]; g.beginPath(); g.ellipse(p.x, cy - 12, 40, 9, 0, 0, Math.PI * 2); g.fill();
         const gl = g.createRadialGradient(p.x, p.y - 20, 5, p.x, p.y - 20, 70 + (w.tease ? 30 : 0)); gl.addColorStop(0, `rgba(255,240,170,${w.tease ? 0.7 : 0.4})`); gl.addColorStop(1, 'rgba(255,240,170,0)'); g.fillStyle = gl; g.fillRect(p.x - 100, p.y - 120, 200, 200);
       }
       // pose
@@ -2494,20 +2525,6 @@ function startDeckPreview(c, dk) {
     }
     g.globalAlpha = 1;
     for (let i = parts.length - 1; i >= 0; i--) if (parts[i].t <= 0) parts.splice(i, 1);
-    // speech bubbles
-    for (let i = bubbles.length - 1; i >= 0; i--) {
-      const b = bubbles[i]; b.t -= dt; if (b.t <= 0) { bubbles.splice(i, 1); continue; }
-      const p = posOf(b.w), pop = Math.min(1, (2.4 - b.t) * 6), a = Math.min(1, b.t * 3);
-      g.save(); g.globalAlpha = a;
-      g.font = 'bold 12px "Trebuchet MS", sans-serif'; const tw = g.measureText(b.txt).width + 18;
-      let bx = Math.max(6, Math.min(PW - tw - 6, p.x - tw / 2)), by = p.y - p.s * 1.9 - 26;
-      if (b.w.hero) by -= 10;
-      g.translate(bx + tw / 2, by + 12); g.scale(pop, pop); g.translate(-(bx + tw / 2), -(by + 12));
-      g.fillStyle = '#fff'; g.beginPath(); g.roundRect(bx, by, tw, 24, 12); g.fill();
-      tri(g, [p.x - 6, by + 23, p.x + 6, by + 23, p.x, by + 31], '#fff');
-      g.fillStyle = '#3a2a70'; g.textAlign = 'center'; g.fillText(b.txt, bx + tw / 2, by + 16);
-      g.restore();
-    }
     previewAnim = requestAnimationFrame(loop);
   };
   previewAnim = requestAnimationFrame(loop);
