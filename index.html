@@ -124,6 +124,12 @@
   .onstatus{text-align:center;font-size:14px;min-height:20px;line-height:1.5} .onstatus .bad{color:#ff9aa6}
   .bigcode{font-size:44px;font-weight:900;letter-spacing:8px;color:var(--gold);text-shadow:0 3px 0 #6a3fa0;margin:4px 0}
   .spin{color:var(--mut);animation:pulse 1.2s infinite} @keyframes pulse{50%{opacity:.4}}
+  .dkpv{margin-top:10px;background:rgba(20,16,50,.5);border-radius:14px;padding:8px;border:2px solid rgba(255,230,140,.35)}
+  .dkpv-empty{text-align:center;color:var(--mut);font-size:13px;padding:10px}
+  .dkpv-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:14px}
+  .dkpv-hint{font-size:12px;color:var(--gold);animation:pulse 1.6s infinite}
+  .dkpv-cv{width:100%;border-radius:10px;display:block;touch-action:manipulation;cursor:pointer}
+  .dkpv-sum{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:11px;color:#e8e6ff} .dkpv-sum .chip{background:rgba(255,255,255,.12);border-radius:999px;padding:2px 8px}
   .dkwarn{color:#ff9aa6;font-size:13px;text-align:center;margin-top:8px}
 </style>
 </head>
@@ -2311,6 +2317,7 @@ function renderDecks() {
   const inp = document.createElement('input'); inp.value = dk.name; inp.maxLength = 16;
   inp.oninput = () => { dk.name = inp.value.trim() || 'Deck ' + (deckEdit + 1); saveDecks(); tabs.children[deckEdit].innerHTML = esc(dk.name) + (deckEdit === DECKS.active ? ' <span class="act">✔</span>' : ''); };
   nm.appendChild(inp); p.appendChild(nm);
+  p.appendChild(buildDeckPreview(dk));
   // hero picker
   p.insertAdjacentHTML('beforeend', `<h3>Hero</h3>`);
   const hg = document.createElement('div'); hg.className = 'dkheroes';
@@ -2358,6 +2365,158 @@ function renderDecks() {
   p.appendChild(act);
   if (!valid) p.insertAdjacentHTML('beforeend', `<div class="dkwarn">Pick ${DECK_SIZE - dk.minis.length} more mini${DECK_SIZE - dk.minis.length === 1 ? '' : 's'} to finish this deck.</div>`);
 }
+
+// ---------- squad showcase: a little 3D stage where your squad wanders around ----------
+let previewAnim = null;
+const QUOTES = {
+  shell: 'Shell yeah!', fox: 'Things are heating up!', golem: 'Grum... smash.', owl: 'Chill out!', sprite: "Bloom where you're planted!",
+  beetle: 'Bzzt! Shocking!', cat: "Didn't see me, did ya?", shroom: 'Kaboom-cap!', boar: 'CHAAARGE!', nibs: 'Finders keepers!',
+  lulu: 'Bubble bandage!', rocco: 'Strike!', spindle: 'My little ones...', scorch: 'Rawr! *smoke puff*', bruno: "Don't poke the keg!",
+  klank: 'Tick... tock... CLANK!', coral: 'Avast, ye scallywags!', willow: 'Nature protects.', ironjaw: 'Stand firm!',
+  kenji: 'Hi-yah!', nyx: 'Delicious...', fern: 'Into the wild!', valka: 'Shields up!',
+};
+function buildDeckPreview(dk) {
+  const wrap = document.createElement('div'); wrap.className = 'dkpv';
+  const done = dk.minis.length === DECK_SIZE;
+  if (!done) {
+    wrap.innerHTML = `<div class="dkpv-empty">✨ Pick ${DECK_SIZE - dk.minis.length} more mini${DECK_SIZE - dk.minis.length === 1 ? '' : 's'} to see your squad come to life</div>`;
+    return wrap;
+  }
+  wrap.insertAdjacentHTML('beforeend', `<div class="dkpv-bar"><b>Your squad</b><span class="dkpv-hint">👆 tap a little guy!</span></div>`);
+  const cv2 = document.createElement('canvas'); cv2.width = 880; cv2.height = 480; cv2.className = 'dkpv-cv';
+  wrap.appendChild(cv2);
+  const roles = {}; dk.minis.forEach(k => { roles[TYPES[k].role] = (roles[TYPES[k].role] || 0) + 1; });
+  const avg = (dk.minis.reduce((a, k) => a + TYPES[k].cost, 0) / DECK_SIZE).toFixed(1);
+  const melee = dk.minis.filter(k => !isRanged(TYPES[k])).length;
+  wrap.insertAdjacentHTML('beforeend', `<div class="dkpv-sum"><span>⚖ Avg cost <b>${avg}</b></span><span>🗡 ${melee} melee · 🏹 ${DECK_SIZE - melee} ranged</span>${Object.entries(roles).map(([r, n]) => `<span class="chip">${r}${n > 1 ? ' ×' + n : ''}</span>`).join('')}</div>`);
+  startDeckPreview(cv2, dk);
+  return wrap;
+}
+function startDeckPreview(c, dk) {
+  if (previewAnim) cancelAnimationFrame(previewAnim);
+  const g = c.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0);
+  const PW = 440, PH = 240, cx = PW / 2, cy = 172, RX = 178, RZ = 38;
+  const rndIn = () => { for (;;) { const x = Math.random() * 2 - 1, z = Math.random() * 2 - 1, d = x * x + z * z; if (d < 0.9 && (x * x) / 0.22 + (z * z) / 0.7 > 1) return [x, z]; } };
+  const walkers = dk.minis.map((k, i) => {
+    const a = i * Math.PI * 2 / dk.minis.length, x = Math.cos(a) * 0.75, z = Math.sin(a) * 0.7;
+    return { k, x, z, tx: x, tz: z, pause: Math.random() * 1.5, wt: Math.random() * 6, face: 1, spd: 0.22 + Math.random() * 0.1, tease: 0, hop: 0, i };
+  });
+  const hero = { k: dk.hero, x: 0, z: -0.05, hero: true, tease: 0, i: 99, face: 1, wt: 0 };
+  const parts = [], bubbles = [];
+  const posOf = w => { const sc = 0.72 + 0.28 * (w.z + 1) / 2; return { x: cx + w.x * RX, y: cy + w.z * RZ - (w.hero ? 26 : 8), sc, s: (w.hero ? 30 : 27) * sc }; };
+  const burst = (x, y, col, n) => { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 120; parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60, t: 0.7 + Math.random() * 0.4, col: Math.random() < 0.35 ? '#fff' : col, heart: Math.random() < 0.3 }); } };
+  c.onpointerdown = e => {
+    const r = c.getBoundingClientRect(), mx = (e.clientX - r.left) * PW / r.width, my = (e.clientY - r.top) * PH / r.height;
+    const all = [...walkers, hero].map(w => ({ w, p: posOf(w) })).sort((a, b) => b.w.z - a.w.z);
+    const hit = all.find(({ p }) => Math.abs(mx - p.x) < p.s * 0.9 && my > p.y - p.s * 1.3 && my < p.y + p.s);
+    if (!hit) return;
+    const w = hit.w;
+    if (w.tease > 0.4) return;
+    w.tease = 1.6; w.pause = 1.8;
+    const col = (TYPES[w.k] || HEROES[w.k]).color;
+    burst(hit.p.x, hit.p.y - hit.p.s * 0.3, col, w.hero ? 30 : 20);
+    for (const b of bubbles) if (b.w === w) b.t = 0;
+    bubbles.push({ w, txt: QUOTES[w.k] || 'Hi!', t: 2.4 });
+    deckInfoKey = w.k; renderDeckInfo();
+  };
+  const t0 = performance.now(); let last = t0;
+  const loop = now => {
+    if (!c.isConnected) { previewAnim = null; return; }
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const t = (now - t0) / 1000;
+    // --- update walkers ---
+    for (const w of walkers) {
+      w.tease = Math.max(0, w.tease - dt); w.hop = Math.max(0, w.hop - dt);
+      if (w.pause > 0) { w.pause -= dt; w.moving = false; if (w.pause <= 0) { [w.tx, w.tz] = rndIn(); } if (Math.random() < dt * 0.15 && !w.tease) { w.hop = 0.5; if (Math.random() < 0.5) { const p = posOf(w); burst(p.x, p.y - p.s, '#ff8fc8', 3); } } continue; }
+      const dx = w.tx - w.x, dz = w.tz - w.z, d = Math.hypot(dx, dz);
+      if (d < 0.03) { w.pause = 0.6 + Math.random() * 2; w.moving = false; continue; }
+      w.x += dx / d * w.spd * dt; w.z += dz / d * w.spd * dt * 1.3; w.wt += dt * 9; w.moving = true;
+      if (Math.abs(dx) > 0.01) w.face = dx > 0 ? 1 : -1;
+    }
+    // gentle separation so they don't stack
+    for (let i = 0; i < walkers.length; i++) for (let j = i + 1; j < walkers.length; j++) {
+      const a = walkers[i], b = walkers[j], dx = b.x - a.x, dz = (b.z - a.z) * 2.2, d = Math.hypot(dx, dz);
+      if (d < 0.22 && d > 0.001) { const p = (0.22 - d) / 2 * 0.5; a.x -= dx / d * p; b.x += dx / d * p; a.z -= dz / d * p / 2.2; b.z += dz / d * p / 2.2; }
+    }
+    hero.tease = Math.max(0, hero.tease - dt);
+    // --- stage ---
+    const bg = g.createLinearGradient(0, 0, 0, PH); bg.addColorStop(0, '#2b2160'); bg.addColorStop(1, '#4a3a8a');
+    g.fillStyle = bg; g.fillRect(0, 0, PW, PH);
+    g.save(); g.globalAlpha = 0.16;
+    for (const sx of [110, 330]) { const gr = g.createLinearGradient(sx, 0, cx, PH); gr.addColorStop(0, '#fff6c8'); gr.addColorStop(1, 'rgba(255,246,200,0)'); g.fillStyle = gr; g.beginPath(); g.moveTo(sx - 12, 0); g.lineTo(sx + 12, 0); g.lineTo(cx + 100, PH); g.lineTo(cx - 100, PH); g.closePath(); g.fill(); }
+    g.restore();
+    for (let i = 0; i < 14; i++) { const a = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2 + i * 1.3)); g.globalAlpha = a * 0.7; star(g, (i * 67 + 20) % PW, (i * 29 + 12) % (PH * 0.5), 2 + (i % 3), '#ffe68a'); }
+    g.globalAlpha = 1;
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(cx, cy + 16, RX + 24, RZ + 12, 0, 0, Math.PI * 2); g.fill();
+    const pf = g.createRadialGradient(cx, cy - 10, 20, cx, cy, RX + 20); pf.addColorStop(0, '#9b8cff'); pf.addColorStop(1, '#5a48b8');
+    g.fillStyle = pf; g.beginPath(); g.ellipse(cx, cy, RX + 20, RZ + 10, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 2; g.beginPath(); g.ellipse(cx, cy, RX + 20, RZ + 10, 0, 0, Math.PI * 2); g.stroke();
+    // little flowers & grass tufts on the stage
+    for (let i = 0; i < 12; i++) { const a = i * 2.39, rr = 0.55 + (i % 3) * 0.15, fx = cx + Math.cos(a) * RX * rr, fy = cy + Math.sin(a) * RZ * rr + 4; g.fillStyle = ['#ff9ac8', '#fff', '#ffe14d'][i % 3]; for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(fx + Math.cos(k * 1.57) * 2.2, fy + Math.sin(k * 1.57) * 1.2, 1.6, 0, Math.PI * 2); g.fill(); } }
+    // --- draw characters back to front ---
+    const all = [...walkers, hero].sort((a, b) => a.z - b.z);
+    for (const w of all) {
+      const p = posOf(w);
+      if (w.hero) {
+        g.fillStyle = '#c9a52a'; g.beginPath(); g.ellipse(p.x, cy - 2, 44, 11, 0, 0, Math.PI); g.fill(); g.fillRect(p.x - 44, cy - 12, 88, 10);
+        g.fillStyle = '#ffd23f'; g.beginPath(); g.ellipse(p.x, cy - 12, 44, 11, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#ffe68a'; g.beginPath(); g.ellipse(p.x, cy - 12, 40, 9, 0, 0, Math.PI * 2); g.fill();
+        const gl = g.createRadialGradient(p.x, p.y - 20, 5, p.x, p.y - 20, 70 + (w.tease ? 30 : 0)); gl.addColorStop(0, `rgba(255,240,170,${w.tease ? 0.7 : 0.4})`); gl.addColorStop(1, 'rgba(255,240,170,0)'); g.fillStyle = gl; g.fillRect(p.x - 100, p.y - 120, 200, 200);
+      }
+      // pose
+      let oy = 0, rot = 0, sx = 1, sy = 1, frame = 'i';
+      if (w.tease > 0) {
+        const e = 1.6 - w.tease; // 0 → 1.6
+        if (e < 0.55) { const q = e / 0.55; oy = -Math.sin(q * Math.PI) * 42; rot = q * Math.PI * 2 * (w.face || 1); if (q < 0.15) { sy = 0.8; sx = 1.2; } }
+        else if (e < 0.7) { const q = (e - 0.55) / 0.15; sy = 1 - 0.25 * Math.sin(q * Math.PI); sx = 1 + 0.25 * Math.sin(q * Math.PI); }
+        else if (e < 1.25) { frame = ((e - 0.7) % 0.28) < 0.14 ? 'a1' : 'a2'; }
+        else { const q = (e - 1.25) / 0.35; oy = -Math.abs(Math.sin(q * Math.PI * 2)) * 6; }
+      } else if (w.moving) {
+        oy = -Math.abs(Math.sin(w.wt)) * 5; rot = Math.sin(w.wt) * 0.08; frame = 'w' + (Math.floor(w.wt / (Math.PI * 2) * 8) % 8);
+        sy = 1 + Math.cos(w.wt * 2) * 0.05; sx = 2 - sy;
+      } else {
+        const b = Math.sin(t * 3 + w.i); sy = 1 + b * 0.04; sx = 1 - b * 0.03;
+        if (w.hop > 0) oy = -Math.sin((0.5 - w.hop) / 0.5 * Math.PI) * 12;
+      }
+      g.save(); g.globalAlpha = 0.6 + 0.4 * (w.z + 1) / 2;
+      g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.ellipse(p.x, p.y + p.s * 0.9, p.s * 0.8 * (1 + oy / 120), p.s * 0.25, 0, 0, Math.PI * 2); g.fill();
+      drawSprite(g, w.k, p.x, p.y + oy, p.s, { frame, flip: w.face || 1, rot, sx, sy });
+      g.restore();
+      if (w.hero) crown2(g, p.x, p.y + oy - p.s * 1.55);
+      if (w.tease > 0 && Math.random() < 0.4) parts.push({ x: p.x + (Math.random() - 0.5) * p.s, y: p.y + oy - p.s * 0.5, vx: (Math.random() - 0.5) * 30, vy: -40, t: 0.6, col: (TYPES[w.k] || HEROES[w.k]).color, heart: false });
+    }
+    // particles
+    for (const q of parts) {
+      q.t -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 160 * dt;
+      g.globalAlpha = Math.max(0, Math.min(1, q.t * 2));
+      if (q.heart) { g.fillStyle = '#ff6fa8'; g.beginPath(); g.moveTo(q.x, q.y + 3); g.bezierCurveTo(q.x - 5, q.y, q.x - 2, q.y - 4, q.x, q.y - 1.5); g.bezierCurveTo(q.x + 2, q.y - 4, q.x + 5, q.y, q.x, q.y + 3); g.fill(); }
+      else star(g, q.x, q.y, 3, q.col);
+    }
+    g.globalAlpha = 1;
+    for (let i = parts.length - 1; i >= 0; i--) if (parts[i].t <= 0) parts.splice(i, 1);
+    // speech bubbles
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      const b = bubbles[i]; b.t -= dt; if (b.t <= 0) { bubbles.splice(i, 1); continue; }
+      const p = posOf(b.w), pop = Math.min(1, (2.4 - b.t) * 6), a = Math.min(1, b.t * 3);
+      g.save(); g.globalAlpha = a;
+      g.font = 'bold 12px "Trebuchet MS", sans-serif'; const tw = g.measureText(b.txt).width + 18;
+      let bx = Math.max(6, Math.min(PW - tw - 6, p.x - tw / 2)), by = p.y - p.s * 1.9 - 26;
+      if (b.w.hero) by -= 10;
+      g.translate(bx + tw / 2, by + 12); g.scale(pop, pop); g.translate(-(bx + tw / 2), -(by + 12));
+      g.fillStyle = '#fff'; g.beginPath(); g.roundRect(bx, by, tw, 24, 12); g.fill();
+      tri(g, [p.x - 6, by + 23, p.x + 6, by + 23, p.x, by + 31], '#fff');
+      g.fillStyle = '#3a2a70'; g.textAlign = 'center'; g.fillText(b.txt, bx + tw / 2, by + 16);
+      g.restore();
+    }
+    previewAnim = requestAnimationFrame(loop);
+  };
+  previewAnim = requestAnimationFrame(loop);
+}
+function crown2(g, x, y) {
+  g.fillStyle = '#ffd23f'; g.beginPath();
+  g.moveTo(x - 9, y + 5); g.lineTo(x - 10, y - 4); g.lineTo(x - 5, y); g.lineTo(x, y - 7); g.lineTo(x + 5, y); g.lineTo(x + 10, y - 4); g.lineTo(x + 9, y + 5);
+  g.closePath(); g.fill(); g.strokeStyle = '#7a4b00'; g.lineWidth = 1; g.stroke();
+}
 function renderDeckInfo() {
   const el = document.getElementById('dkinfo'); if (!el) return;
   const k = deckInfoKey;
@@ -2376,6 +2535,43 @@ const NET_VERSION = 1;
 const qp = new URLSearchParams(location.search);
 const PEER_OPTS = qp.get('peerhost') ? { host: qp.get('peerhost').split(':')[0], port: +(qp.get('peerhost').split(':')[1] || 9000), path: '/', secure: false } : {};
 let NET = null; // { peer, conn, host }
+
+// ---- Relay (TURN) settings: paste your free Metered "Open Relay" app name + API key here ----
+// Sign up at https://dashboard.metered.ca/signup, create an app, then copy these two values.
+const TURN_APP = '';   // e.g. 'funkylittleguys'  (the part before .metered.live)
+const TURN_KEY = '';   // your API key
+let iceCache = null;
+async function iceServers() {
+  if (iceCache) return iceCache;
+  const list = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+  ];
+  const app = qp.get('turnapp') || TURN_APP, key = qp.get('turnkey') || TURN_KEY;
+  if (app && key) {
+    try {
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 6000);
+      const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`, { signal: ctl.signal });
+      clearTimeout(to);
+      if (r.ok) { const extra = await r.json(); if (Array.isArray(extra)) list.push(...extra); }
+    } catch (e) { console.warn('TURN credentials unavailable', e); }
+  }
+  return (iceCache = list);
+}
+const hasRelay = () => !!((qp.get('turnapp') || TURN_APP) && (qp.get('turnkey') || TURN_KEY));
+function watchIce(conn, onFail) {
+  let tries = 0;
+  const iv = setInterval(() => {
+    const pc = conn.peerConnection;
+    if (!pc) { if (++tries > 40) clearInterval(iv); return; }
+    const st = pc.iceConnectionState;
+    if (st === 'connected' || st === 'completed' || conn.open) { clearInterval(iv); return; }
+    if (st === 'failed') { clearInterval(iv); onFail(); }
+  }, 500);
+}
+const BLOCKED_MSG = () => hasRelay()
+  ? '<span class="bad">Your networks blocked the connection, even through the relay. Try switching one of you to mobile data.</span>'
+  : '<span class="bad">Found the room, but your networks blocked a direct connection.<br>Try switching one of you to mobile data, or add a free relay server (see the README).</span>';
 const MIRROR = 700; // y-mirror line between the two boards (PY[r] + EY[r] = 700)
 
 function netSend(m) { try { if (NET && NET.conn && NET.conn.open) NET.conn.send(m); } catch (e) {} }
@@ -2407,12 +2603,12 @@ function peerReady() {
   if (typeof Peer === 'undefined') { onStatus('<span class="bad">Online play couldn\'t load. Check your internet connection and reload the page.</span>'); return false; }
   return true;
 }
-function hostGame() {
+async function hostGame() {
   if (!peerReady()) return;
   netClose();
   const code = roomCode();
   onStatus('Creating room…');
-  const peer = new Peer('flg-' + code, PEER_OPTS);
+  const peer = new Peer('flg-' + code, { ...PEER_OPTS, config: { iceServers: await iceServers() } });
   NET = { peer, conn: null, host: true };
   peer.on('open', () => {
     onStatus(`<div>Your room code</div><div class="bigcode">${code}</div><div>Tell your friend to tap <b>Join</b> and type this code.</div><div class="spin">Waiting for your friend…</div>
@@ -2420,26 +2616,31 @@ function hostGame() {
     $('onCancel').onclick = () => { netClose(); showOnline(); };
   });
   peer.on('connection', conn => {
-    if (NET.conn) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 200); }); return; }
+    if (NET.conn && NET.conn.open) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 200); }); return; }
+    if (NET.conn) { try { NET.conn.close(); } catch (e) {} }   // an earlier attempt that never connected
     NET.conn = conn; wireConn(conn);
+    watchIce(conn, () => { if (NET && NET.conn === conn) { NET.conn = null; onStatus(`<div>Your room code</div><div class="bigcode">${code}</div><span class="bad">Your friend found the room but the connection was blocked. They can try again, or switch to mobile data.</span>`); } });
   });
   peer.on('error', err => {
     if (err.type === 'unavailable-id') { netClose(); hostGame(); return; }
     onStatus(`<span class="bad">Couldn't create a room (${esc(err.type || 'error')}). Check your connection and try again.</span>`);
   });
 }
-function joinGame(code) {
+async function joinGame(code) {
   code = (code || '').toUpperCase().trim();
   if (code.length !== 5) { onStatus('<span class="bad">Enter the 5-letter code from your friend.</span>'); return; }
   if (!peerReady()) return;
   netClose();
   onStatus('Connecting…');
-  const peer = new Peer(PEER_OPTS);
+  const peer = new Peer({ ...PEER_OPTS, config: { iceServers: await iceServers() } });
   NET = { peer, conn: null, host: false };
   peer.on('open', () => {
+    onStatus('Found the server, connecting to your friend…');
     const conn = peer.connect('flg-' + code, { reliable: true });
     NET.conn = conn; wireConn(conn);
-    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) onStatus('<span class="bad">Couldn\'t reach that room. Check the code and try again.</span>'); }, 12000);
+    watchIce(conn, () => { if (NET && NET.conn === conn) onStatus(BLOCKED_MSG()); });
+    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) onStatus('Still trying… (this can take a little while on some networks)'); }, 9000);
+    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) onStatus(BLOCKED_MSG()); }, 25000);
   });
   peer.on('error', err => {
     onStatus(`<span class="bad">${err.type === 'peer-unavailable' ? 'No game found with that code.' : 'Connection problem (' + esc(err.type || 'error') + ').'}</span>`);
