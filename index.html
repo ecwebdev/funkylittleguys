@@ -10,19 +10,23 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;background:linear-gradient(#a8dcff,#ffd9ec 55%,#fff1d6);background-attachment:fixed;color:var(--txt);
     font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;min-height:100%;user-select:none;-webkit-user-select:none}
-  #app{max-width:460px;margin:0 auto;padding:8px}
+  #app{max-width:520px;margin:0 auto;padding:6px 8px;box-sizing:border-box;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  #app > *{flex:none}
+  #topbar h1{font-size:18px}
   h1{font-size:20px;margin:2px 0 6px;text-align:center;letter-spacing:1px}
   h1 span{color:var(--gold)}
-  #hud{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;background:var(--panel);border-radius:12px;padding:6px 10px}
+  #hud{padding:4px 10px!important;display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;background:var(--panel);border-radius:12px;padding:6px 10px}
   .side{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mut)}
   .side.you{text-align:right}
   .hpbar{height:10px;background:#11142a;border-radius:6px;overflow:hidden}
   .hpbar div{height:100%;transition:width .4s}
   #ehp{background:var(--foe)} #php{background:var(--you);margin-left:auto}
   .side b{color:var(--txt)}
+  #roundBox b{font-size:18px!important}
   #roundBox{text-align:center;font-size:13px;color:var(--mut)} #roundBox b{display:block;font-size:22px;color:var(--txt)}
-  #stage{position:relative;margin-top:6px}
-  canvas#cv{width:100%;display:block;border-radius:14px;touch-action:none;box-shadow:0 6px 24px #0008}
+  #stage{flex:1 1 auto!important;min-height:120px;margin-top:5px;display:flex;align-items:center;justify-content:center}
+  #boardWrap{position:relative}
+  canvas#cv{width:100%;height:100%;display:block;border-radius:14px;touch-action:none;box-shadow:0 6px 24px #0008}
   #toast{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);background:#000c;padding:8px 14px;border-radius:10px;
     font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
   #toast.show{opacity:1}
@@ -37,28 +41,34 @@
   button:disabled{opacity:.4;cursor:default}
   button.go{background:linear-gradient(#ff7a45,#e8452c)}
   button.big{font-size:18px;padding:12px 26px}
-  #controls{display:flex;gap:6px;align-items:center;margin-top:8px}
+  #controls{display:flex;gap:6px;align-items:center;margin-top:6px}
+  #controls button{padding:8px 10px}
   #goldBox{display:flex;align-items:center;gap:5px;background:var(--panel);padding:7px 10px;border-radius:10px;font-size:18px}
   .coin{width:16px;height:16px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff3b0,var(--gold) 55%,#c98a00);display:inline-block}
   #capBox{font-size:12px;color:var(--mut);flex:1;text-align:center}
-  #shop{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+  #shop{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
   .card{background:var(--panel);border-radius:12px;padding:6px 4px;text-align:center;cursor:pointer;position:relative;border:2px solid transparent}
   .card:hover{border-color:#ffffff30}
   .card.cant{opacity:.45}
-  .card canvas{width:64px;height:64px}
+  .card canvas{width:46px;height:46px}
+  .card{padding:4px 3px 5px!important}
   .card .nm{font-size:12px;font-weight:bold}
   .card .rl{font-size:10px;color:var(--mut)}
   .card .cost{position:absolute;top:4px;left:5px;display:flex;align-items:center;gap:2px;font-weight:bold;font-size:13px}
   .card .up{position:absolute;top:3px;right:4px;font-size:10px;background:#3ddc84;color:#062;border-radius:6px;padding:1px 4px;font-weight:bold}
   .card.sold{visibility:hidden}
-  #info{background:var(--panel);border-radius:12px;padding:8px 10px;margin-top:8px;font-size:12px;color:var(--mut);min-height:52px}
+  #info{background:var(--panel);border-radius:12px;padding:6px 10px;margin-top:6px;font-size:11.5px;color:var(--mut);height:58px;overflow-y:auto;line-height:1.35}
+  #info b{font-size:13px!important}
   #info b{color:var(--txt);font-size:14px}
   #info .stats{margin-top:3px}
   #overlay{position:fixed;inset:0;background:transparent;display:flex;align-items:center;justify-content:center;z-index:10;padding:14px}
   #overlay{overflow-y:auto;align-items:flex-start} #overlay > *{margin:auto}
   .ovbox{max-width:440px;width:100%;text-align:center}
   body:has(#overlay:not(.hidden)) #app{visibility:hidden}
-  #capBox{background:rgba(48,40,100,.75);color:#fff!important;border-radius:999px;padding:5px 8px}
+  #capBox{background:rgba(48,40,100,.75);color:#fff!important;border-radius:999px;padding:5px 8px;white-space:nowrap;font-size:11px!important;flex:0 1 auto!important;overflow:hidden;text-overflow:ellipsis}
+  #controls #fight{margin-left:auto}
+  #controls button{white-space:nowrap}
+  @media (max-width:400px){ #controls{gap:4px} #controls button{font-size:12px;padding:7px 7px} #goldBox{padding:5px 7px;font-size:16px} #capBox{font-size:10px!important;padding:4px 6px} }
   #bg{position:fixed;inset:0;width:100%;height:100%;z-index:-1;display:block}
   .card-glass{background:rgba(48,40,100,.86);border-radius:20px;padding:14px;box-shadow:0 10px 30px rgba(90,50,140,.35);border:2px solid rgba(255,255,255,.25);box-sizing:border-box}
   .ovbox h2{margin:4px 0}
@@ -164,11 +174,11 @@
     <div id="roundBox">Round<b id="round">1</b></div>
     <div class="side you"><span><b id="phpt">20</b> You</span><div class="hpbar"><div id="php" style="width:100%"></div></div></div>
   </div>
-  <div id="stage">
+  <div id="stage"><div id="boardWrap">
     <canvas id="cv" width="440" height="660"></canvas>
     <div id="toast"></div>
     <div id="banner" class="hidden"></div>
-  </div>
+  </div></div>
   <div id="controls">
     <div id="goldBox"><span class="coin"></span><b id="gold">0</b></div>
     <span id="capBox"></span>
@@ -1711,7 +1721,8 @@ function updateHud() {
   $('phpt').textContent = S.php; $('ehpt').textContent = S.ehp;
   $('php').style.width = (S.php / START_HP * 100) + '%';
   $('ehp').style.width = (S.ehp / START_HP * 100) + '%';
-  $('capBox').textContent = `Board ${boardCount()}/${capFor(S.round)} · +${incomeFor(S.round + 1)} next`;
+  $('capBox').textContent = `Board ${boardCount()}/${capFor(S.round)} · +${incomeFor(S.round + 1)}g`;
+  $('capBox').title = `Minis on board / max this round · gold you'll get next round`;
   const plan = S.phase === 'plan';
   $('refresh').disabled = !plan || S.gold < 1;
   const su = S.sel && S.sel.zone !== 'enemy' ? getAt(S.sel) : null;
@@ -2254,6 +2265,15 @@ function drawFx(dt) {
 }
 
 const DPR = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+function fitBoard() {
+  const st = document.getElementById('stage'), bw = document.getElementById('boardWrap');
+  const aw = st.clientWidth, ah = st.clientHeight;
+  if (!aw || !ah) return;
+  const k = Math.min(aw / W, ah / H);
+  bw.style.width = Math.floor(W * k) + 'px'; bw.style.height = Math.floor(H * k) + 'px';
+}
+new ResizeObserver(fitBoard).observe(document.getElementById('stage'));
+addEventListener('resize', fitBoard);
 cv.width = W * DPR; cv.height = H * DPR;
 let last = performance.now(), acc = 0;
 function frame(now) {
