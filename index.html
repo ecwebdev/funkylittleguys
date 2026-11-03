@@ -26,6 +26,10 @@
   #roundBox{text-align:center;font-size:13px;color:var(--mut)} #roundBox b{display:block;font-size:22px;color:var(--txt)}
   #stage{flex:1 1 auto!important;min-height:120px;margin-top:5px;display:flex;align-items:center;justify-content:center}
   #boardWrap{position:relative}
+  body.fighting #controls, body.fighting #shop, body.fighting #info{display:none}
+  #speedFab{position:absolute;top:1.2%;right:2%;z-index:3;padding:5px 11px;font-size:12px;border-radius:999px;background:rgba(40,30,90,.8);box-shadow:0 3px 0 #0006;border:2px solid rgba(255,255,255,.35)}
+  #speedFab.on{background:linear-gradient(#ff7a45,#e8452c)}
+  #speedFab.hidden{display:none}
   canvas#cv{width:100%;height:100%;display:block;border-radius:14px;touch-action:none;box-shadow:0 6px 24px #0008}
   #toast{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);background:#000c;padding:8px 14px;border-radius:10px;
     font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
@@ -178,6 +182,7 @@
     <canvas id="cv" width="440" height="660"></canvas>
     <div id="toast"></div>
     <div id="banner" class="hidden"></div>
+    <button id="speedFab" class="hidden"></button>
   </div></div>
   <div id="controls">
     <div id="goldBox"><span class="coin"></span><b id="gold">0</b></div>
@@ -1100,7 +1105,7 @@ function hitTest(x, y) {
 
 function canvasPos(e) {
   const r = cv.getBoundingClientRect();
-  return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height];
+  return [VIEW.x + (e.clientX - r.left) * VIEW.w / r.width, (e.clientY - r.top) * H / r.height];
 }
 cv.addEventListener('pointerdown', e => {
   if (!S || S.phase !== 'plan' || (S.online && S.online.myReady)) return;
@@ -1728,6 +1733,12 @@ function updateHud() {
   const su = S.sel && S.sel.zone !== 'enemy' ? getAt(S.sel) : null;
   $('sell').disabled = !plan || !su || su.hero;
   $('sell').textContent = su && !su.hero ? `Sell +${Math.max(1, su.spent - 1)}` : 'Sell';
+  const fighting = S.phase === 'battle' || S.phase === 'result';
+  if (document.body.classList.contains('fighting') !== fighting) { document.body.classList.toggle('fighting', fighting); requestAnimationFrame(fitBoard); }
+  const fab = $('speedFab');
+  fab.classList.toggle('hidden', S.phase !== 'battle' || !!S.online);
+  fab.textContent = S.speed === 1 ? '⏩ Speed up' : '▶ Normal';
+  fab.classList.toggle('on', S.speed !== 1);
   const f = $('fight');
   if (S.online) {
     if (S.phase === 'battle') { f.disabled = true; f.textContent = '🌐 Live battle'; f.className = ''; }
@@ -1782,6 +1793,7 @@ function renderInfo() {
 }
 
 $('refresh').onclick = refresh;
+$('speedFab').onclick = () => { if (S && S.phase === 'battle' && !S.online) { S.speed = S.speed === 1 ? 2 : 1; updateHud(); } };
 $('sell').onclick = sell;
 $('fight').onclick = () => {
   if (S.phase === 'plan') { if (S.online) onlineReady(); else startBattle(); }
@@ -2265,12 +2277,17 @@ function drawFx(dt) {
 }
 
 const DPR = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+// During fights we crop the side scenery so the board itself can be bigger.
+const VIEW = { x: 0, w: W };
 function fitBoard() {
   const st = document.getElementById('stage'), bw = document.getElementById('boardWrap');
+  const fighting = document.body.classList.contains('fighting');
+  VIEW.x = fighting ? 50 : 0; VIEW.w = W - VIEW.x * 2;
+  if (cv.width !== VIEW.w * DPR) cv.width = VIEW.w * DPR;
   const aw = st.clientWidth, ah = st.clientHeight;
   if (!aw || !ah) return;
-  const k = Math.min(aw / W, ah / H);
-  bw.style.width = Math.floor(W * k) + 'px'; bw.style.height = Math.floor(H * k) + 'px';
+  const k = Math.min(aw / VIEW.w, ah / H);
+  bw.style.width = Math.floor(VIEW.w * k) + 'px'; bw.style.height = Math.floor(H * k) + 'px';
 }
 new ResizeObserver(fitBoard).observe(document.getElementById('stage'));
 addEventListener('resize', fitBoard);
@@ -2286,7 +2303,7 @@ function frame(now) {
       acc += sdt;
       while (acc >= 1 / 60) { step(1 / 60); acc -= 1 / 60; if (S.online && S.online.host && ++S.online.tick % 2 === 0) hostSnapshot(); }
     }
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.setTransform(DPR, 0, 0, DPR, -VIEW.x * DPR, 0);
     ctx.save();
     if (shakeAmt > 0) { ctx.translate((Math.random() - 0.5) * shakeAmt, (Math.random() - 0.5) * shakeAmt); shakeAmt = Math.max(0, shakeAmt - rdt * 40); }
     drawField();
@@ -2843,6 +2860,7 @@ function recordResult(r) { const st = loadStats(); st[r] = (st[r] || 0) + 1; try
 let menuAnim = null;
 function showMenu() {
   closeModal();
+  document.body.classList.remove('fighting');
   if (S && S.online) netClose();
   if (S) { S.paused = true; S.phase = 'menu'; }
   $('banner').classList.add('hidden');
