@@ -11,7 +11,11 @@ To play from a link, use GitHub Pages:
 2. Set the source to **Deploy from a branch**.
 3. Pick `main` and `/ (root)`, then save.
 
-After about a minute the game is live at `https://ecwebdev.github.io/funkylittleguys/`.
+After about a minute the game is live at `https://<your-username>.github.io/<repo-name>/`.
+
+## Play with a friend online
+
+Tap **🌐 Play Online** on the main menu. One player taps **Host a game** and shares the 5-letter room code. The other player types the code in and taps **Join**. You each plan on your own device with your own deck, and the battle plays out live for both of you. It works straight from GitHub Pages, so there's no server to set up.
 
 ## How it works
 

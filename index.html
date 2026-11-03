@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Funky Little Guys</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
 <style>
   :root{--bg:#1b1f3a;--panel:#262b52;--panel2:#30366a;--you:#3fa0ff;--foe:#ff4d5e;--gold:#ffc93c;--txt:#f3f4ff;--mut:#a9aed8}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -117,6 +118,12 @@
   .dkinfo{background:var(--panel);border-radius:12px;padding:8px 10px;margin-top:10px;font-size:12px;min-height:48px;line-height:1.45}
   .dkinfo small{display:block;font-size:11px}
   .dkact{display:flex;gap:8px;margin-top:10px} .dkact button{flex:1}
+  .onl{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:12px}
+  .onl .or{color:var(--mut);font-size:13px}
+  .joinrow{display:flex;gap:8px} .joinrow input{width:130px;text-align:center;font:inherit;font-size:22px;font-weight:bold;letter-spacing:4px;background:#11142a;border:2px solid #ffffff33;border-radius:10px;color:#fff;padding:6px}
+  .onstatus{text-align:center;font-size:14px;min-height:20px;line-height:1.5} .onstatus .bad{color:#ff9aa6}
+  .bigcode{font-size:44px;font-weight:900;letter-spacing:8px;color:var(--gold);text-shadow:0 3px 0 #6a3fa0;margin:4px 0}
+  .spin{color:var(--mut);animation:pulse 1.2s infinite} @keyframes pulse{50%{opacity:.4}}
   .dkwarn{color:#ff9aa6;font-size:13px;text-align:center;margin-top:8px}
 </style>
 </head>
@@ -973,13 +980,13 @@ function startPlan() {
   S.gold += incomeFor(S.round);
   if (S.nibGold) { S.gold += S.nibGold; setTimeout(() => toast(`Nibs snuck back +${S.nibGold} gold!`), 300); S.nibGold = 0; }
   rollShop();
-  aiPlan();
+  if (S.online) { S.egrid = emptyGrid(); S.online.myReady = false; } else aiPlan();
   $('banner').classList.add('hidden');
   updateHud(); renderShop(); renderInfo();
 }
 
 function buy(i) {
-  if (S.phase !== 'plan') return;
+  if (S.phase !== 'plan' || (S.online && S.online.myReady)) return;
   const k = S.shop[i]; if (!k) return;
   const d = TYPES[k];
   if (S.gold < d.cost) return toast('Not enough gold');
@@ -1058,7 +1065,7 @@ function canvasPos(e) {
   return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height];
 }
 cv.addEventListener('pointerdown', e => {
-  if (!S || S.phase !== 'plan') return;
+  if (!S || S.phase !== 'plan' || (S.online && S.online.myReady)) return;
   const [x, y] = canvasPos(e);
   const h = hitTest(x, y);
   const u = getAt(h);
@@ -1123,8 +1130,10 @@ function aiPlan() {
 }
 
 // ======================= BATTLE =======================
+let entIdc = 1;
 function makeEnt(u, side, x, y, idx, row) {
   const e = makeEntBase(u, side, x, y);
+  e.id = entIdc++;
   Object.assign(e, {
     walkT: Math.random() * 6, moving: false, face: x < W / 2 ? 1 : -1, faceS: x < W / 2 ? 1 : -1,
     atkAnim: 0, atkDur: 0.3, hitT: 0, castT: 0, kx: 0, ky: 0, spawnT: 0.45 + idx * 0.05,
@@ -1152,7 +1161,7 @@ function makeEntBase(u, side, x, y) {
 
 function startBattle() {
   if (S.phase !== 'plan') return;
-  if (boardCount() === 0 && !confirm('You have no minis on the board. Fight anyway?')) return;
+  if (!S.online && boardCount() === 0 && !confirm('You have no minis on the board. Fight anyway?')) return;
   S.phase = 'battle'; S.sel = null; S.drag = null; S.speed = 1;
   S.ents = []; S.projs = []; S.fx = []; S.floats = []; S.corpses = []; S.bt = 0; S.ended = false;
   let idx = 0;
@@ -1620,26 +1629,40 @@ function endBattle(res, pAlive, eAlive) {
   S.nibGold = S.ents.filter(e => e.alive && e.key === 'nibs' && e.side === 1).length;
   S.ai.nibGold = S.ents.filter(e => e.alive && e.key === 'nibs' && e.side === -1).length;
   let dmgTxt;
-  if (res === 'win') { const d = 1 + pAlive; S.ehp = Math.max(0, S.ehp - d); dmgTxt = `Rival loses ${d} HP`; }
+  if (res === 'win') { const d = 1 + pAlive; S.ehp = Math.max(0, S.ehp - d); dmgTxt = `${S.online ? 'Your friend loses' : 'Rival loses'} ${d} HP`; }
   else if (res === 'lose') { const d = 1 + eAlive; S.php = Math.max(0, S.php - d); dmgTxt = `You lose ${d} HP`; }
   else { S.ehp = Math.max(0, S.ehp - 1); S.php = Math.max(0, S.php - 1); dmgTxt = 'Both sides lose 1 HP'; }
   // MVP
   const mine = S.ents.filter(e => e.side === 1).sort((a, b) => b.dmgDealt - a.dmgDealt)[0];
+  if (S.online && S.online.host) {
+    const gm = S.ents.filter(e => e.side === -1).sort((a, b) => b.dmgDealt - a.dmgDealt)[0];
+    const boasts = {}; S.ents.forEach(e => { if (e.side === -1 && e.u.hero) boasts[e.u.uid] = e.u.boast || 0; });
+    netSend({ t: 'result', res, php: S.php, ehp: S.ehp, pAlive, eAlive, nib: S.ai.nibGold, boasts,
+      mvp: gm && gm.dmgDealt > 0 ? [gm.d.name || '', Math.round(gm.dmgDealt)] : null });
+  }
+  showResultBanner(res, dmgTxt, mine && mine.dmgDealt > 0 ? [mine.d.name, Math.round(mine.dmgDealt)] : null);
+}
+function showResultBanner(res, dmgTxt, mvp) {
+  S.phase = 'result';
   const over = S.php <= 0 || S.ehp <= 0;
+  const foe = S.online ? 'your friend' : 'the rival';
   const b = $('banner');
   const title = { win: 'VICTORY!', lose: 'DEFEAT', draw: 'DRAW' }[res];
   const col = { win: '#ffd23f', lose: '#ff6b7a', draw: '#cfd3ff' }[res];
   b.innerHTML = `<h2 style="color:${col}">${title}</h2><p>${dmgTxt}</p>` +
-    (mine && mine.dmgDealt > 0 ? `<p>MVP: <b style="color:#fff">${mine.d.name}</b> · ${Math.round(mine.dmgDealt)} damage</p>` : '');
+    (mvp ? `<p>MVP: <b style="color:#fff">${mvp[0]}</b> · ${mvp[1]} damage</p>` : '');
   const btn = document.createElement('button'); btn.className = 'go big';
   if (over) {
     const won = S.ehp <= 0 && S.php > 0;
     b.innerHTML = `<h2 style="color:${won ? '#ffd23f' : '#ff6b7a'}">${won ? 'YOU WIN!' : S.ehp <= 0 ? 'DRAW GAME' : 'GAME OVER'}</h2>
-      <p>${won ? 'You knocked out the rival in ' + S.round + ' rounds!' : S.ehp <= 0 ? 'Both sides fell together.' : 'The rival won this time. Survived ' + S.round + ' rounds.'}</p>`;
+      <p>${won ? 'You knocked out ' + foe + ' in ' + S.round + ' rounds!' : S.ehp <= 0 ? 'Both sides fell together.' : (S.online ? 'Your friend' : 'The rival') + ' won this time. Survived ' + S.round + ' rounds.'}</p>`;
     recordResult(won ? 'w' : S.ehp <= 0 ? 'd' : 'l');
-    btn.textContent = 'Play again'; btn.onclick = newGame;
-    const mb = document.createElement('button'); mb.textContent = 'Main menu'; mb.onclick = showMenu;
-    setTimeout(() => b.appendChild(mb), 0);
+    if (S.online) { btn.textContent = 'Main menu'; btn.onclick = () => { netClose(); showMenu(); }; }
+    else {
+      btn.textContent = 'Play again'; btn.onclick = newGame;
+      const mb = document.createElement('button'); mb.textContent = 'Main menu'; mb.onclick = showMenu;
+      setTimeout(() => b.appendChild(mb), 0);
+    }
   } else {
     btn.textContent = 'Next round →';
     btn.onclick = () => { S.round++; startPlan(); };
@@ -1655,6 +1678,7 @@ function toast(m) { const t = $('toast'); t.textContent = m; t.classList.add('sh
 
 function updateHud() {
   $('round').textContent = S.round;
+  $('ehpt').previousSibling && ($('ehpt').parentNode.firstChild.textContent = S.online ? 'Friend ' : 'Rival ');
   $('gold').textContent = S.gold;
   $('phpt').textContent = S.php; $('ehpt').textContent = S.ehp;
   $('php').style.width = (S.php / START_HP * 100) + '%';
@@ -1666,7 +1690,12 @@ function updateHud() {
   $('sell').disabled = !plan || !su || su.hero;
   $('sell').textContent = su && !su.hero ? `Sell +${Math.max(1, su.spent - 1)}` : 'Sell';
   const f = $('fight');
-  if (S.phase === 'battle') { f.disabled = false; f.textContent = S.speed === 1 ? '⏩ Speed up' : '▶ Normal speed'; f.className = S.speed === 1 ? '' : 'go'; }
+  if (S.online) {
+    if (S.phase === 'battle') { f.disabled = true; f.textContent = '🌐 Live battle'; f.className = ''; }
+    else if (S.online.myReady && plan) { f.disabled = true; f.textContent = '⏳ Waiting…'; f.className = ''; }
+    else { f.disabled = !plan; f.textContent = S.online.oppReady ? '⚔ Ready! (friend is ready)' : '⚔ Ready!'; f.className = 'go'; }
+    if (plan && S.online.myReady) { $('refresh').disabled = true; $('sell').disabled = true; }
+  } else if (S.phase === 'battle') { f.disabled = false; f.textContent = S.speed === 1 ? '⏩ Speed up' : '▶ Normal speed'; f.className = S.speed === 1 ? '' : 'go'; }
   else { f.disabled = !plan; f.textContent = '⚔ Fight!'; f.className = 'go'; }
 }
 
@@ -1706,7 +1735,7 @@ function showInfo(u, where) {
     <div>${d.desc}</div>${u.hero ? promoHtml(d, S.round) : ''}${u.key === 'fern' && u.hero ? '<div style="color:#9bff8a">' + (S.sel && S.sel.zone === 'board' && S.sel.r <= 1 ? '🦌 Front 2 rows: will fight in Deer Form' : 'Put her in the front 2 rows for Deer Form') + '</div>' : ''}${u.boast ? '<div style="color:#ffb0d0">Boast: +' + (u.boast * 15) + '% attack speed</div>' : ''}`;
 }
 function renderInfo() {
-  if (S.phase === 'battle') { $('info').innerHTML = '<b>Battle!</b><div>Your minis fight on their own. Tap Speed up to watch at 2x speed. It goes back to normal each round.</div>'; return; }
+  if (S.phase === 'battle') { $('info').innerHTML = S.online ? '<b>Live battle!</b><div>You and your friend are watching the same fight. Your team is always at the bottom.</div>' : '<b>Battle!</b><div>Your minis fight on their own. Tap Speed up to watch at 2x speed. It goes back to normal each round.</div>'; return; }
   const u = S.sel ? getAt(S.sel) : null;
   if (u) showInfo(u, S.sel.zone);
   else $('info').innerHTML = `<b>Plan your team</b><div>Tap a shop card to buy. Drag minis to move or swap them. Tap a mini to see its stats. The rival's team stays hidden until the fight starts.</div>`;
@@ -1716,7 +1745,7 @@ function renderInfo() {
 $('refresh').onclick = refresh;
 $('sell').onclick = sell;
 $('fight').onclick = () => {
-  if (S.phase === 'plan') startBattle();
+  if (S.phase === 'plan') { if (S.online) onlineReady(); else startBattle(); }
   else if (S.phase === 'battle') { S.speed = S.speed === 1 ? 2 : 1; updateHud(); }
 };
 
@@ -1913,7 +1942,7 @@ function drawPlanUnits() {
   if (S.phase === 'plan') drawRivalFog();
   // top text
   ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Trebuchet MS", sans-serif'; ctx.textAlign = 'center';
-  if (S.phase === 'plan') ctx.fillText('PLANNING · Rival team hidden', W / 2, 26);
+  if (S.phase === 'plan') ctx.fillText(S.online ? 'ONLINE · ' + (S.online.myReady ? 'Waiting for your friend…' : 'Plan, then press Ready!') : 'PLANNING · Rival team hidden', W / 2, 26);
   ctx.font = '12px "Trebuchet MS", sans-serif'; ctx.fillStyle = '#ffffffb0';
   if (S.phase === 'plan') ctx.fillText('Drag minis onto your tiles, then press Fight!', W / 2, 46);
 }
@@ -1932,7 +1961,7 @@ function drawRivalFog() {
   }
   ctx.textBaseline = 'alphabetic';
   ctx.font = 'bold 13px "Trebuchet MS", sans-serif';
-  const msg = 'The rival is planning in secret…', mw = ctx.measureText(msg).width + 24;
+  const msg = S.online ? (S.online.oppReady ? 'Your friend is ready ✔' : 'Your friend is planning…') : 'The rival is planning in secret…', mw = ctx.measureText(msg).width + 24;
   ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.roundRect(W / 2 - mw / 2, 189, mw, 26, 13); ctx.fill();
   ctx.fillStyle = '#ffd0d6'; ctx.fillText(msg, W / 2, 207);
   ctx.restore();
@@ -2204,9 +2233,10 @@ function frame(now) {
   if (S) {
     const sdt = S.paused ? 0 : rdt * (S.phase === 'battle' ? S.speed : 1);
     if (hitStopT > 0) hitStopT -= rdt;
+    else if (S.phase === 'battle' && S.online && !S.online.host) { guestSmooth(rdt); }
     else if (S.phase === 'battle' && !S.paused) {
       acc += sdt;
-      while (acc >= 1 / 60) { step(1 / 60); acc -= 1 / 60; }
+      while (acc >= 1 / 60) { step(1 / 60); acc -= 1 / 60; if (S.online && S.online.host && ++S.online.tick % 2 === 0) hostSnapshot(); }
     }
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.save();
@@ -2341,6 +2371,233 @@ function showDeckMsg(m) {
   el.textContent = m;
 }
 
+// ======================= ONLINE (PeerJS, host-authoritative) =======================
+const NET_VERSION = 1;
+const qp = new URLSearchParams(location.search);
+const PEER_OPTS = qp.get('peerhost') ? { host: qp.get('peerhost').split(':')[0], port: +(qp.get('peerhost').split(':')[1] || 9000), path: '/', secure: false } : {};
+let NET = null; // { peer, conn, host }
+const MIRROR = 700; // y-mirror line between the two boards (PY[r] + EY[r] = 700)
+
+function netSend(m) { try { if (NET && NET.conn && NET.conn.open) NET.conn.send(m); } catch (e) {} }
+function netClose() {
+  const n = NET; NET = null;
+  if (n) { try { if (n.conn && n.conn.open) n.conn.send({ t: 'bye' }); } catch (e) {} setTimeout(() => { try { n.conn && n.conn.close(); } catch (e) {} try { n.peer && n.peer.destroy(); } catch (e) {} }, 150); }
+  if (S) S.online = null;
+}
+function roomCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 5; i++) c += a[Math.floor(Math.random() * a.length)]; return c; }
+
+function showOnline() {
+  const p = panelShell('Play Online');
+  const dk = activeDeck();
+  p.insertAdjacentHTML('beforeend', `<div class="help" style="font-size:13px">Play a friend on another phone or computer. You both need this page open.<br>
+    You'll use your active deck: <b>${esc(dk.name)}</b> (${HEROES[dk.hero].name}).</div>
+    <div class="onl">
+      <button id="onHost" class="go big">🏠 Host a game</button>
+      <div class="or">or join a friend</div>
+      <div class="joinrow"><input id="onCode" maxlength="5" placeholder="CODE" autocomplete="off"><button id="onJoin" class="go">Join</button></div>
+      <div id="onStatus" class="onstatus"></div>
+    </div>`);
+  $('onHost').onclick = hostGame;
+  $('onJoin').onclick = () => joinGame($('onCode').value);
+  $('onCode').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+  $('onCode').onkeydown = e => { if (e.key === 'Enter') joinGame($('onCode').value); };
+}
+function onStatus(html) { const el = $('onStatus'); if (el) el.innerHTML = html; }
+function peerReady() {
+  if (typeof Peer === 'undefined') { onStatus('<span class="bad">Online play couldn\'t load. Check your internet connection and reload the page.</span>'); return false; }
+  return true;
+}
+function hostGame() {
+  if (!peerReady()) return;
+  netClose();
+  const code = roomCode();
+  onStatus('Creating room…');
+  const peer = new Peer('flg-' + code, PEER_OPTS);
+  NET = { peer, conn: null, host: true };
+  peer.on('open', () => {
+    onStatus(`<div>Your room code</div><div class="bigcode">${code}</div><div>Tell your friend to tap <b>Join</b> and type this code.</div><div class="spin">Waiting for your friend…</div>
+      <button id="onCancel" style="margin-top:8px">Cancel</button>`);
+    $('onCancel').onclick = () => { netClose(); showOnline(); };
+  });
+  peer.on('connection', conn => {
+    if (NET.conn) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 200); }); return; }
+    NET.conn = conn; wireConn(conn);
+  });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') { netClose(); hostGame(); return; }
+    onStatus(`<span class="bad">Couldn't create a room (${esc(err.type || 'error')}). Check your connection and try again.</span>`);
+  });
+}
+function joinGame(code) {
+  code = (code || '').toUpperCase().trim();
+  if (code.length !== 5) { onStatus('<span class="bad">Enter the 5-letter code from your friend.</span>'); return; }
+  if (!peerReady()) return;
+  netClose();
+  onStatus('Connecting…');
+  const peer = new Peer(PEER_OPTS);
+  NET = { peer, conn: null, host: false };
+  peer.on('open', () => {
+    const conn = peer.connect('flg-' + code, { reliable: true });
+    NET.conn = conn; wireConn(conn);
+    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) onStatus('<span class="bad">Couldn\'t reach that room. Check the code and try again.</span>'); }, 12000);
+  });
+  peer.on('error', err => {
+    onStatus(`<span class="bad">${err.type === 'peer-unavailable' ? 'No game found with that code.' : 'Connection problem (' + esc(err.type || 'error') + ').'}</span>`);
+  });
+}
+function wireConn(conn) {
+  conn.on('open', () => {
+    if (!NET.host) { conn.send({ t: 'hello', v: NET_VERSION }); onStatus('Connected! Starting…'); }
+  });
+  conn.on('data', m => { try { onNet(m); } catch (e) { console.error(e); } });
+  conn.on('close', () => { if (NET && NET.conn === conn) lostConnection(); });
+  conn.on('error', () => {});
+}
+function lostConnection() {
+  const inGame = S && S.online;
+  netClose();
+  if (inGame) {
+    const md = $('modal');
+    md.innerHTML = `<div class="mbox"><h2>Connection lost</h2><p>Your friend left or the connection dropped.</p><div class="row"><button id="lcOk" class="go">Main menu</button></div></div>`;
+    md.classList.remove('hidden'); $('lcOk').onclick = () => { closeModal(); showMenu(); };
+  } else onStatus('<span class="bad">Connection closed.</span>');
+}
+
+function newOnlineGame(host) {
+  newGame();
+  S.online = { host, oppReady: false, myReady: false, oppBoard: null, tick: 0 };
+  S.ai.hero = null;
+  S.egrid = emptyGrid();
+  toast(host ? 'Your friend joined!' : 'Connected to your friend!');
+  updateHud(); renderShop(); renderInfo();
+}
+function serializeBoard() {
+  const out = [];
+  S.pgrid.forEach((row, r) => row.forEach((u, c) => { if (u) out.push({ r, c, key: u.key, lvl: u.lvl, hero: u.hero, uid: u.uid, boast: u.boast || 0 }); }));
+  return out;
+}
+function onlineReady() {
+  if (!S.online || S.phase !== 'plan' || S.online.myReady) return;
+  S.online.myReady = true;
+  S.sel = null;
+  if (S.online.host) maybeStartOnlineBattle();
+  else netSend({ t: 'ready', board: serializeBoard(), round: S.round });
+  updateHud(); renderShop(); renderInfo();
+}
+function maybeStartOnlineBattle() {
+  const o = S.online;
+  if (!o || !o.host || !o.myReady || !o.oppBoard || S.phase !== 'plan') return;
+  S.egrid = emptyGrid();
+  o.oppBoard.forEach(b => { S.egrid[b.r][b.c] = { key: b.key, lvl: b.lvl, hero: b.hero, uid: b.uid, boast: b.boast, spent: 0 }; });
+  o.oppBoard = null; o.oppReady = false;
+  netSend({ t: 'battle', round: S.round });
+  startBattle();
+}
+
+// --- host: snapshots of the live battle ---
+const EF = [['id', 'id'], ['key', 'k'], ['drawKey', 'dk'], ['side', 's'], ['x', 'x'], ['y', 'y'], ['kx', 'kx'], ['ky', 'ky'], ['r', 'r'], ['hp', 'hp'], ['maxHp', 'mh'], ['hpLag', 'hl'],
+  ['shield', 'sh'], ['faceS', 'fs'], ['moving', 'mv'], ['walkT', 'wt'], ['atkAnim', 'aa'], ['atkDur', 'ad'], ['lx', 'lx'], ['ly', 'ly'], ['hitT', 'ht'], ['stunT', 'st'], ['rootT', 'rt'],
+  ['spawnT', 'sp'], ['castT', 'ct'], ['flash', 'f'], ['slowT', 'sl'], ['burnT', 'bu'], ['buffT', 'bf'], ['empT', 'em'], ['empX', 'ex'], ['stealT', 'stl'], ['reflectT', 'rf'],
+  ['unstopT', 'un'], ['invulnT', 'iv'], ['ragT', 'rg'], ['weakT', 'wk'], ['antiHealT', 'ah'], ['maxE', 'me'], ['energy', 'en'], ['lvl', 'lv'], ['summon', 'sm']];
+const rn = v => typeof v === 'number' ? Math.round(v * 100) / 100 : v;
+function serFx(f) {
+  const o = {};
+  for (const k in f) { if (k === 'a' || k === 'b') o[k] = f[k] && f[k].id; else if (k !== '_sent') o[k] = Array.isArray(f[k]) ? f[k].map(p => p.map(rn)) : rn(f[k]); }
+  return o;
+}
+function grabNew(arr, ser) { const out = []; for (const it of arr) if (!it._sent) { it._sent = 1; out.push(ser ? ser(it) : it); } return out; }
+function hostSnapshot() {
+  const e = S.ents.filter(x => x.alive).map(x => { const o = { h: x.u.hero ? 1 : 0 }; for (const [k, sk] of EF) o[sk] = rn(x[k]); return o; });
+  const p = S.projs.map(q => ({ id: q.id || (q.id = entIdc++), x: rn(q.x), y: rn(q.y), h: rn(q.h || 0), k: q.kind, c: q.col, b: q.big ? 1 : 0, l: q.lob ? 1 : 0, a: rn(q.ang || 0), sp: rn(q.spin || 0) }));
+  netSend({ t: 'snap', bt: rn(S.bt), sh: rn(shakeAmt), fl: rn(S.flashT || 0), e, p,
+    fx: grabNew(S.fx, serFx), fl2: grabNew(S.floats, f => ({ x: rn(f.x), y: rn(f.y), txt: f.txt, col: f.col, t: f.t, big: f.big })),
+    pa: grabNew(S.parts, q => [rn(q.x), rn(q.y), rn(q.vx), rn(q.vy), rn(q.t), q.col, rn(q.s)]),
+    co: grabNew(S.corpses, c => ({ key: c.key, x: rn(c.x), y: rn(c.y), r: c.r, face: c.face, t: c.t })) });
+}
+
+// --- guest: render the host's battle, mirrored so you're always at the bottom ---
+function guestStartBattle(round) {
+  S.round = round;
+  S.phase = 'battle'; S.sel = null; S.drag = null; S.speed = 1;
+  S.ents = []; S.projs = []; S.fx = []; S.floats = []; S.corpses = []; S.parts = []; S.bt = 0;
+  S.gmap = new Map(); S.ptrail = new Map();
+  updateHud(); renderShop(); renderInfo();
+}
+function guestSnap(m) {
+  if (S.phase !== 'battle') return;
+  S.bt = m.bt; shakeAmt = Math.max(shakeAmt, m.sh); if (m.fl > (S.flashT || 0)) S.flashT = m.fl;
+  const seen = new Set();
+  for (const a of m.e) {
+    let e = S.gmap.get(a.id);
+    const fresh = !e;
+    if (fresh) { e = { u: { hero: !!a.h, key: a.k }, alive: true, d: {} }; S.gmap.set(a.id, e); S.ents.push(e); }
+    for (const [k, sk] of EF) e[k] = a[sk];
+    e.side = -a.s; e.ky = -a.ky; e.ly = -a.ly;
+    e.tx = a.x; e.ty = MIRROR - a.y;
+    if (fresh) { e.x = e.px = e.tx; e.y = e.py = e.ty; } else { e.x = e.px; e.y = e.py; }
+    e.alive = true; seen.add(a.id);
+  }
+  for (const [id, e] of S.gmap) if (!seen.has(id)) { e.alive = false; S.gmap.delete(id); }
+  S.ents = S.ents.filter(e => e.alive);
+  const trails = new Map();
+  S.projs = m.p.map(q => {
+    const tr = S.ptrail.get(q.id) || []; const y = MIRROR - q.y;
+    tr.push([q.x, y - q.h]); if (tr.length > 12) tr.shift(); trails.set(q.id, tr);
+    return { x: q.x, y, h: q.h, kind: q.k, col: q.c, big: !!q.b, lob: !!q.l, ang: -q.a, spin: q.sp, trail: tr };
+  });
+  S.ptrail = trails;
+  for (const f of m.fx) {
+    if ('y' in f) f.y = MIRROR - f.y;
+    if ('y1' in f) { f.y1 = MIRROR - f.y1; f.y2 = MIRROR - f.y2; }
+    if (f.pts) f.pts = f.pts.map(([x, y]) => [x, MIRROR - y]);
+    if (f.kind === 'slash') { f.ang = -f.ang; }
+    if (f.kind === 'beam') { f.a = S.gmap.get(f.a); f.b = S.gmap.get(f.b); if (!f.a || !f.b) continue; }
+    S.fx.push(f);
+  }
+  for (const f of m.fl2) { f.y = MIRROR - f.y; S.floats.push(f); }
+  for (const [x, y, vx, vy, t, col, sz] of m.pa) S.parts.push({ x, y: MIRROR - y, vx, vy, t, col, s: sz });
+  for (const c of m.co) { c.y = MIRROR - c.y; S.corpses.push(c); }
+}
+function guestSmooth(dt) {
+  const k = Math.min(1, dt * 18);
+  for (const e of S.ents) { if (e.tx === undefined) continue; e.x += (e.tx - e.x) * k; e.y += (e.ty - e.y) * k; e.px = e.x; e.py = e.y; }
+}
+function guestResult(m) {
+  if (!S.online) return;
+  const res = m.res === 'win' ? 'lose' : m.res === 'lose' ? 'win' : 'draw';
+  S.php = m.ehp; S.ehp = m.php;
+  S.nibGold = m.nib || 0;
+  allPlayerUnits().forEach(u => { if (u.hero && m.boasts && m.boasts[u.uid] !== undefined) u.boast = m.boasts[u.uid]; });
+  let dmgTxt;
+  if (res === 'win') dmgTxt = `Your friend loses ${1 + m.eAlive} HP`;
+  else if (res === 'lose') dmgTxt = `You lose ${1 + m.pAlive} HP`;
+  else dmgTxt = 'Both sides lose 1 HP';
+  S.gmap = new Map();
+  showResultBanner(res, dmgTxt, m.mvp);
+}
+
+function onNet(m) {
+  if (!m || !m.t) return;
+  switch (m.t) {
+    case 'hello':
+      if (!NET.host) return;
+      if (m.v !== NET_VERSION) { netSend({ t: 'version' }); return; }
+      netSend({ t: 'start' }); newOnlineGame(true); break;
+    case 'start': newOnlineGame(false); break;
+    case 'version': onStatus('<span class="bad">You and your friend have different versions of the game. Both reload the page.</span>'); break;
+    case 'full': onStatus('<span class="bad">That room already has two players.</span>'); break;
+    case 'ready':
+      if (!S || !S.online) return;
+      S.online.oppReady = true; S.online.oppBoard = m.board;
+      if (!S.online.myReady) toast('Your friend is ready!');
+      maybeStartOnlineBattle(); updateHud(); break;
+    case 'battle': if (S && S.online) guestStartBattle(m.round); break;
+    case 'snap': if (S && S.online) guestSnap(m); break;
+    case 'result': guestResult(m); break;
+    case 'bye': lostConnection(); break;
+  }
+}
+
 // ======================= MENU / QUIT =======================
 function loadStats() { try { return JSON.parse(localStorage.getItem('pb_stats')) || { w: 0, l: 0, d: 0 }; } catch (e) { return { w: 0, l: 0, d: 0 }; } }
 function recordResult(r) { const st = loadStats(); st[r] = (st[r] || 0) + 1; try { localStorage.setItem('pb_stats', JSON.stringify(st)); } catch (e) {} }
@@ -2348,6 +2605,7 @@ function recordResult(r) { const st = loadStats(); st[r] = (st[r] || 0) + 1; try
 let menuAnim = null;
 function showMenu() {
   closeModal();
+  if (S && S.online) netClose();
   if (S) { S.paused = true; S.phase = 'menu'; }
   $('banner').classList.add('hidden');
   const ov = $('overlay'); ov.innerHTML = '';
@@ -2366,6 +2624,7 @@ function showMenu() {
   prev.appendChild(row); prev.onclick = showDecks;
   m.appendChild(prev);
   mkBtn('▶  PLAY', 'go big', () => { stopMenuAnim(); newGame(); });
+  mkBtn('🌐  Play Online', '', showOnline);
   mkBtn('🃏  Decks', '', showDecks);
   mkBtn('📖  How to Play', '', showHowTo);
   mkBtn('👾  Meet the Minis', '', showRoster);
@@ -2452,13 +2711,14 @@ function showRoster() {
 function closeModal() { $('modal').classList.add('hidden'); $('modal').innerHTML = ''; }
 function askQuit() {
   if (!S || S.phase === 'menu' || !$('overlay').classList.contains('hidden')) return;
-  S.paused = true;
+  if (!S.online) S.paused = true;
   const md = $('modal');
-  md.innerHTML = `<div class="mbox"><h2>Paused</h2><p>Quit to the main menu? You'll lose your progress in this game.</p>
+  md.innerHTML = S.online ? `<div class="mbox"><h2>Leave match?</h2><p>The game keeps running. Leaving ends the match for both of you.</p>
+    <div class="row"><button id="qKeep" class="go">Keep playing</button><button id="qQuit">Leave match</button></div></div>` : `<div class="mbox"><h2>Paused</h2><p>Quit to the main menu? You'll lose your progress in this game.</p>
     <div class="row"><button id="qKeep" class="go">Keep playing</button><button id="qQuit">Quit to menu</button></div></div>`;
   md.classList.remove('hidden');
   $('qKeep').onclick = () => { closeModal(); S.paused = false; last = performance.now(); };
-  $('qQuit').onclick = () => { closeModal(); showMenu(); };
+  $('qQuit').onclick = () => { closeModal(); netClose(); showMenu(); };
 }
 $('menuBtn').onclick = askQuit;
 document.addEventListener('keydown', e => {
