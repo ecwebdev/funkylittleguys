@@ -137,6 +137,7 @@
   .onl{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:12px}
   .onl .or{color:var(--mut);font-size:13px}
   .joinrow{display:flex;gap:8px} .joinrow input{width:130px;text-align:center;font:inherit;font-size:22px;font-weight:bold;letter-spacing:4px;background:#11142a;border:2px solid #ffffff33;border-radius:10px;color:#fff;padding:6px}
+  .ondiag{font-size:10.5px;color:var(--mut);opacity:.75;text-align:center;max-width:320px;line-height:1.4;min-height:14px}
   .onstatus{text-align:center;font-size:14px;min-height:20px;line-height:1.5} .onstatus .bad{color:#ff9aa6}
   .bigcode{font-size:44px;font-weight:900;letter-spacing:8px;color:var(--gold);text-shadow:0 3px 0 #6a3fa0;margin:4px 0}
   .spin{color:var(--mut);animation:pulse 1.2s infinite} @keyframes pulse{50%{opacity:.4}}
@@ -3659,7 +3660,7 @@ function showDeckMsg(m) {
 }
 
 // ======================= ONLINE (PeerJS, host-authoritative) =======================
-const NET_VERSION = 2;
+const NET_VERSION = 3;
 const qp = new URLSearchParams(location.search);
 const PEER_OPTS = qp.get('peerhost') ? { host: qp.get('peerhost').split(':')[0], port: +(qp.get('peerhost').split(':')[1] || 9000), path: '/', secure: false } : {};
 let NET = null; // { peer, conn, host }
@@ -3711,17 +3712,30 @@ function netClose() {
 
 // ---------- Relay fallback (public MQTT-over-WebSocket brokers, no signup) ----------
 // Used automatically when a direct WebRTC connection is blocked by the network.
-const RELAY_BROKERS = qp.get('mqtt') ? [qp.get('mqtt')] : ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+const RELAY_BROKERS = qp.get('mqtt') ? [qp.get('mqtt')] : ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+const brokerName = u => u.includes('emqx') ? 'EMQX' : u.includes('hivemq') ? 'HiveMQ' : u.includes('mosquitto') ? 'Mosquitto' : 'local';
 let mqttLoading = null;
 function loadMqtt() {
   if (typeof mqtt !== 'undefined') return Promise.resolve(true);
   if (mqttLoading) return mqttLoading;
+  const srcs = ['https://unpkg.com/mqtt@5/dist/mqtt.min.js', 'https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js'];
   mqttLoading = new Promise(res => {
-    const sc = document.createElement('script'); sc.src = 'https://unpkg.com/mqtt@5/dist/mqtt.min.js';
-    sc.onload = () => res(typeof mqtt !== 'undefined'); sc.onerror = () => { mqttLoading = null; res(false); };
-    document.head.appendChild(sc);
+    const tryN = i => {
+      if (i >= srcs.length) { mqttLoading = null; netLog('relay library failed to load'); res(false); return; }
+      const sc = document.createElement('script'); sc.src = srcs[i];
+      sc.onload = () => { if (typeof mqtt !== 'undefined') { netLog('relay library loaded'); res(true); } else tryN(i + 1); };
+      sc.onerror = () => tryN(i + 1);
+      document.head.appendChild(sc);
+    };
+    tryN(0);
   });
   return mqttLoading;
+}
+function netLog(m) {
+  console.log('[online]', m);
+  if (!NET) return;
+  (NET.log = NET.log || []).push(m); if (NET.log.length > 8) NET.log.shift();
+  const el = document.getElementById('onDiag'); if (el) el.textContent = NET.log.join(' · ');
 }
 function relayTopic(code) { return 'funkylittleguys/v2/room/' + code + '/'; }
 function connectBroker(url, timeoutMs) {
@@ -3748,14 +3762,16 @@ class RelayConn {
 function wireRelay(rc) {
   rc.on('data', m => { try { onNet(m); } catch (e) { console.error(e); } });
   rc.on('close', () => { if (NET && NET.conn === rc) lostConnection(); });
+  rc._wasOpen = true;
 }
 async function relayHost(code) {
   if (!(await loadMqtt()) || !NET || !NET.host) return;
   const T = relayTopic(code);
   RELAY_BROKERS.forEach(async url => {
     const c = await connectBroker(url, 8000);
-    if (!c) return;
+    if (!c) { netLog('relay ' + brokerName(url) + ' ✕'); return; }
     if (!NET || !NET.host || NET.code !== code) { try { c.end(true); } catch (e) {} return; }
+    netLog('relay ' + brokerName(url) + ' ✔');
     NET.relayClients = (NET.relayClients || []).concat(c);
     c.subscribe(T + 'g2h', { qos: 1 });
     c.on('message', (topic, buf) => {
@@ -3764,8 +3780,10 @@ async function relayHost(code) {
       if (NET.conn && NET.conn.relay && NET.conn.client === c) { NET.conn.recv(m); return; }
       if (m.t !== 'hello') return;
       if (NET.conn && NET.conn.open) { c.publish(T + 'h2g', JSON.stringify({ t: 'full' }), { qos: 1 }); return; }
-      if (NET.conn) { try { NET.conn.close(); } catch (e) {} }
-      const rc = new RelayConn(c, T + 'h2g', T + 'g2h'); NET.conn = rc; NET.relay = true; wireRelay(rc); rc.recv(m);
+      const old = NET.conn;
+      const rc = new RelayConn(c, T + 'h2g', T + 'g2h'); NET.conn = rc; NET.relay = true; wireRelay(rc);
+      if (old) { try { old.close(); } catch (e) {} }
+      netLog('friend connected via relay'); rc.recv(m);
     });
   });
 }
@@ -3778,7 +3796,8 @@ async function relayGuest(code) {
   for (const url of RELAY_BROKERS) {
     if (!NET || NET.host) return;
     const c = await connectBroker(url, 8000);
-    if (!c) continue;
+    if (!c) { netLog('relay ' + brokerName(url) + ' ✕'); continue; }
+    netLog('relay ' + brokerName(url) + ' ✔, calling host');
     const rc = new RelayConn(c, T + 'g2h', T + 'h2g');
     let started = false;
     c.subscribe(T + 'h2g', { qos: 1 });
@@ -3786,7 +3805,8 @@ async function relayGuest(code) {
     const old = NET.conn; NET.conn = rc; NET.relay = true; wireRelay(rc);
     try { old && old.close && old.close(); } catch (e) {}
     for (let i = 0; i < 6 && !started; i++) { rc.send({ t: 'hello', v: NET_VERSION }); await new Promise(r => setTimeout(r, 1500)); }
-    if (started) return;
+    if (started) { netLog('connected via relay'); return; }
+    netLog('no answer on ' + brokerName(url));
     rc.open = false; clearInterval(rc.ping); try { c.end(true); } catch (e) {}
   }
   if (NET && !NET.host) onStatus('<span class="bad">Couldn\'t reach your friend, even through the relay. Check the code, make sure their screen shows the room code, and try again.</span>');
@@ -3803,6 +3823,7 @@ function showOnline() {
       <div class="or">or join a friend</div>
       <div class="joinrow"><input id="onCode" maxlength="5" placeholder="CODE" autocomplete="off"><button id="onJoin" class="go">Join</button></div>
       <div id="onStatus" class="onstatus"></div>
+      <div id="onDiag" class="ondiag"></div>
     </div>`);
   $('onHost').onclick = hostGame;
   $('onJoin').onclick = () => joinGame($('onCode').value);
@@ -3824,7 +3845,7 @@ async function hostGame() {
       <button id="onCancel" style="margin-top:8px">Cancel</button>`);
     $('onCancel').onclick = () => { netClose(); showOnline(); };
   };
-  NET = { peer: null, conn: null, host: true, code };
+  NET = { peer: null, conn: null, host: true, code }; netLog('version ' + NET_VERSION);
   relayHost(code).then(() => setTimeout(showCode, 300));
   if (typeof Peer === 'undefined' || qp.get('forcerelay')) { setTimeout(showCode, 2500); return; }
   const peer = new Peer('flg-' + code, { ...PEER_OPTS, config: { iceServers: await iceServers() } });
@@ -3832,8 +3853,9 @@ async function hostGame() {
   peer.on('open', showCode);
   peer.on('connection', conn => {
     if (NET.conn && NET.conn.open) { conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 200); }); return; }
-    if (NET.conn) { try { NET.conn.close(); } catch (e) {} }   // an earlier attempt that never connected
-    NET.conn = conn; wireConn(conn);
+    const old = NET.conn; NET.conn = conn; wireConn(conn);   // replace first, then close any earlier attempt
+    if (old) { try { old.close(); } catch (e) {} }
+    netLog('friend found, trying direct connection');
     watchIce(conn, () => { if (NET && NET.conn === conn) NET.conn = null; });  // the guest will fall back to the relay automatically
   });
   peer.on('error', err => {
@@ -3847,6 +3869,7 @@ async function joinGame(code) {
   netClose();
   onStatus('Connecting…');
   NET = { peer: null, conn: null, host: false, code };
+  netLog('version ' + NET_VERSION);
   if (typeof Peer === 'undefined' || qp.get('forcerelay')) { relayGuest(code); return; }
   const peer = new Peer({ ...PEER_OPTS, config: { iceServers: await iceServers() } });
   NET.peer = peer;
@@ -3855,17 +3878,22 @@ async function joinGame(code) {
     const conn = peer.connect('flg-' + code, { reliable: true });
     NET.conn = conn; wireConn(conn);
     watchIce(conn, () => { if (NET && NET.conn === conn) relayGuest(code); });
-    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) relayGuest(code); }, 8000);
+    setTimeout(() => { if (NET && NET.conn === conn && !conn.open) { netLog('direct timed out'); relayGuest(code); } }, 6000);
   });
   peer.on('error', err => { if (NET && !NET.host) relayGuest(code); });
 }
 function wireConn(conn) {
   conn.on('open', () => {
-    if (!NET.host) { conn.send({ t: 'hello', v: NET_VERSION }); onStatus('Connected! Starting…'); }
+    conn._wasOpen = true; netLog('direct connection open');
+    if (NET && !NET.host) { conn.send({ t: 'hello', v: NET_VERSION }); onStatus('Connected! Starting…'); }
   });
   conn.on('data', m => { try { onNet(m); } catch (e) { console.error(e); } });
-  conn.on('close', () => { if (NET && NET.conn === conn) lostConnection(); });
-  conn.on('error', () => {});
+  conn.on('close', () => {
+    if (!NET || NET.conn !== conn) return;
+    if (conn._wasOpen) lostConnection();
+    else { NET.conn = null; netLog('direct attempt failed'); if (!NET.host) relayGuest(NET.code); }
+  });
+  conn.on('error', () => { netLog('direct attempt error'); });
 }
 function lostConnection() {
   const inGame = S && S.online;
